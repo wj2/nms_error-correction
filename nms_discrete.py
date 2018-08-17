@@ -6,6 +6,7 @@ import scipy.optimize as sio
 import scipy.misc as sm
 import general.utility as u
 import integ_model.error_correction as ccec
+from sklearn import svm
 
 from mixedselectivity_theory.utility import *
 
@@ -151,7 +152,7 @@ def simulate_transform_code_out(c, o, n_i, noisevar, v, neurs=None,
                                        n_samps=n_samps, subdim=subdim,
                                        distortion_func=distortion_func,
                                        eps=eps)
-    out = out + (bt, words)
+    out = out + (bt, words, trs)
     if cc_rf is None:
         out = out + (sel,)
     return out    
@@ -187,20 +188,33 @@ def _format_by_original_word(all_words, orig_words, noise_words):
     c = np.array(list(map(lambda x: x[:, :minsize], collection)))
     return c
 
-def decode_single_attribute(all_words, orig_words, noise_words, resample=100):
+def decode_single_attribute(all_words, enc_words, orig_words, noise_words, 
+                            resample=100, c=1000):
     accuracy_dims = []
     for i in range(all_words.shape[1]):
         feat_vals = np.unique(all_words[:, i])
         corr_matrix = np.zeros((len(feat_vals), resample))
         for j, v in enumerate(feat_vals):
             c1_mask = orig_words[:, i] == v
+            c1_words = enc_words[all_words[:, i] == v]
             c1 = noise_words[c1_mask].T
             c1 = np.reshape(c1, c1.shape + (1,))
 
+            c2_words = enc_words[np.logical_not(all_words[:, i] == v)]
             c2 = noise_words[np.logical_not(c1_mask)].T
             c2 = np.reshape(c2, c2.shape + (1,))
-            out = na.svm_decoding(c1, c2, format_=False)
-            corr_matrix[j] = out[0][:, 0]
+
+            # find ideal bound, then decide which noise words are on 
+            # either side
+            x = np.concatenate((c1_words, c2_words), axis=0)
+            y = np.concatenate((np.ones(c1_words.shape[0]), 
+                                -np.ones(c2_words.shape[0])))
+            clf = svm.SVC(kernel='linear', C=c)
+            clf.fit(x, y)
+            c1_class = clf.predict(c1[:, :, 0].T) == 1
+            c2_class = clf.predict(c2[:, :, 0].T) == -1
+            corr = np.concatenate((c1_class, c2_class), axis=0)
+            corr_matrix[j] = u.bootstrap_list(corr, np.mean, resample)
         accuracy_dims.append(corr_matrix)
     return accuracy_dims
         
@@ -436,12 +450,14 @@ def _ident_close_words(c, o, n_i, rf, cent=True):
     md_mask = ds_cw == md
     return s[md_mask], s[ind]    
 
-def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False):
+def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False,
+                                      bound_at_one=True):
     n_e = _close_words(c, o, n_i=n_i, excl=excl)
     arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl)
     dense_val = sts.norm(0, 1).cdf(arg)
     p_e = n_e*(1 - dense_val)
-    p_e = min(1, p_e)
+    if bound_at_one:
+        p_e = min(1, p_e)
     return p_e
 
 def _nnup_density_arg(c, o, v, noisevar, n_i=5, rf=1, excl=False):
@@ -553,6 +569,22 @@ def error_upper_bound_overpwr(c, o, vs, noisevar, n_i=5, excl=False):
            for v_i in vs]
     return np.array(eps)
 
+def pwr_require_err(target_pe, c, o, n_i, eps=1, rf=1, subdim=False,
+                    noisevar=1, excl=True, distortion='hamming',
+                    lg=10**(5)):
+    def func(v):
+        err = perr_per_energy(c, o, n_i, v, eps, rf, noisevar,
+                              distortion=distortion, excl=excl,
+                              subdim=subdim, bound_at_one=False)
+        return np.abs(err - target_pe)
+    if subdim:
+        e_bound = analytical_code_terms_cc(o, c, n_i, rf, excl=excl)
+    else:
+        e_bound = 0
+    opt_res = sio.minimize(func, e_bound + 1, bounds=((e_bound, None),))
+    snr = np.sqrt(opt_res.x/noisevar)
+    return snr, opt_res.success
+
 def agwn_pe_opt(c, o, v, noisevar, n_i=5, blocklen=None):
     """ 
     valid for large n and rate close to capacity
@@ -650,14 +682,15 @@ def power_modulation_beta(n_mult, c, o, n_i):
     print('p', np.sqrt(np.sum(pf_inv**2)))
 
 def perr_per_energy(c, o, n_i, e, eps, sig, nv=10, excl=True, subdim=True,
-                    distortion='mse'):
+                    distortion='mse', bound_at_one=True):
     if subdim:
         dims = analytical_code_terms_cc(o, c, n_i, sig, excl=excl)
         v = (1/eps)*(e - dims)
     else:
         v = e/eps
-    if v > 0:
-        est_err = hetero_error_full_ana_nnub(c, o, v, nv, n_i, sig, 
+    if v >= 0:
+        est_err = hetero_error_full_ana_nnub(c, o, v, nv, n_i, sig,
+                                             bound_at_one=bound_at_one,
                                              distortion=distortion)   
     else:
         est_err = np.inf
@@ -767,7 +800,8 @@ def get_sse(c, o, n_i, rf=1):
             mse_tot = 10*c
     return mse_tot
 
-def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, distortion='mse'):
+def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, bound_at_one=True,
+                               distortion='mse'):
     excl = True
     arg = _nnup_density_arg(c, o, v, noisevar, n_i, rf=rf, excl=excl)
     dense_val = 1 - sts.norm(0, 1).cdf(arg)
@@ -777,7 +811,8 @@ def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, distortion='mse'):
         est_e = mse_tot*dense_val
     elif distortion == 'hamming':
         est_e = num_neigh*dense_val
-        est_e = min(est_e, 1)
+        if bound_at_one:
+            est_e = min(est_e, 1)
     else:
         raise Exception('distortion is not one of "mse", "hamming" or blank')
     return est_e    
@@ -816,47 +851,29 @@ def distance_energy_per_unit(c, o, e, n_i, eps, streams=1, excl=False,
     return delta2
 
 def rigotti_repl(c, o, n_i, snrs, times_samp=10, excl=False, 
-                 neurs=1000, nuis=False, bs_samps=1000):
+                 neurs=1000, nuis=False, nuis_prob=.5, bs_samps=1000):
     sigs = np.array(snrs)**2
     nv = 1
     c_dims = np.zeros(len(snrs))
     ic_dims = np.zeros_like(c_dims)
 
     for i, s in enumerate(sigs):
-        if nuis:
-            out = simulate_transform_code_out(c+1, o+1, n_i, nv, s, 
-                                              neurs=neurs,
-                                              times_samp=times_samp, 
-                                              excl=excl)
-        else:
-            out = simulate_transform_code_out(c, o, n_i, nv, s, neurs=neurs,
-                                              times_samp=times_samp, 
-                                              excl=excl)
-        owords, dec_words, ns, corr, bt, words, sel = out
+        out = simulate_transform_code_out(c, o, n_i, nv, s, 
+                                          neurs=neurs,
+                                          times_samp=times_samp, 
+                                          excl=excl)
+        owords, dec_words, ns, corr, bt, words, trs, sel = out
         owords_nb = get_original_from_binary(bt, words, owords)
         if nuis:
-            # dim to apply on
-            nuis_ind = c*n_i 
-            # got trials right where noise was low enough
-            # and in the right space
-            corr_dim = owords[:, nuis_ind] == 1
+            nonlin_sel = np.array([len(s) > 1 for s in sel]).reshape((1, -1))
+            nuis_occur = np.random.rand(owords.shape[0]) > nuis_prob
+            nuis_occur = nuis_occur.reshape((-1, 1))
+            sub_mask = nuis_occur*nonlin_sel*trs(owords)
+            ns = ns - sub_mask
             corr = np.logical_not(np.logical_and(np.logical_not(corr), 
-                                                 corr_dim))
-            # now need to take out info about nuisance dimension
-            dim_mask_1 = [nuis_ind not in x for x in sel]
-            dim_mask_2 = [nuis_ind + 1 not in x for x in sel]
-            dim_mask = np.logical_and(dim_mask_1, dim_mask_2)
-            word_mask = (True,)*(c*n_i) + (False,)*n_i
-            owords = owords[:, word_mask]
-            words = np.unique(words[:, :-1], axis=0)
-            owords_nb = owords_nb[:, :-1]
-            dec_words = dec_words[:, word_mask]
-            ns = ns[:, dim_mask]
-            bt = bt[:, word_mask]
-            bt = np.unique(bt, axis=0)
+                                                 nuis_occur[:, 0]))
         c_dims[i], ic_dims[i] = estimate_code_dimensionality(corr, owords, 
                                                              ns, bt)
-        
         incorr_mask = corr.astype(bool)
         corr_mask = np.logical_not(corr.astype(bool))
         acd_corr = decode_single_attribute(words, owords_nb[corr_mask], 
