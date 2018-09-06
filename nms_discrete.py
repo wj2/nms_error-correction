@@ -5,7 +5,7 @@ import scipy.stats as sts
 import scipy.optimize as sio
 import scipy.misc as sm
 import general.utility as u
-import integ_model.error_correction as ccec
+import general.rf_models as ccec
 from sklearn import svm
 
 from mixedselectivity_theory.utility import *
