@@ -15,9 +15,31 @@ def mse_distortion(word1, word2):
     dist = np.sum((word1 - word2)**2)
     return dist
 
-def volume_nball(r, n):
+def volume_nball(r, n, pos=False):
     v = (np.pi**(n/2))*(r**n)/sps.gamma((n/2) + 1)
+    if pos:
+        v = v/(2**n)
     return v
+
+def surface_nball(r, n, pos=False):
+    g = sps.gamma((n + 1)/2)
+    p = np.pi**((n + 1)/2)
+    s = 2*(p*(r**n))/g
+    if pos:
+        s = s/(2**n)
+    return s
+
+def sample_nball(r, d, n_samps):
+    s = sts.norm.rvs(0, 1, (n_samps, d))
+    lam = (1/r)*np.sqrt(np.sum(s**2, axis=1)).reshape((-1, 1))
+    return s / lam
+
+def sample_positive_nball(r, d, n_samps):
+    samps = sample_nball(r, d, n_samps)
+    while np.any(samps < 0):
+        rs = np.sum(samps < 0, axis=1) > 0
+        samps[rs] = sample_nball(r, d, np.sum(rs))
+    return samps
 
 def integ_lattice_in_ball(r, d, eps=.000001):
     int_size = int(np.ceil(2*r + 1))
