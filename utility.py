@@ -37,17 +37,12 @@ def surface_nball(r, n, pos=False):
         s = s/(2**n)
     return s
 
-def sample_nball(r, d, n_samps):
+def sample_nball(r, d, n_samps, pos=True):
     s = sts.norm.rvs(0, 1, (n_samps, d))
+    if pos:
+        s = np.abs(s)    
     lam = (1/r)*np.sqrt(np.sum(s**2, axis=1)).reshape((-1, 1))
     return s / lam
-
-def sample_positive_nball(r, d, n_samps):
-    samps = sample_nball(r, d, n_samps)
-    while np.any(samps < 0):
-        rs = np.sum(samps < 0, axis=1) > 0
-        samps[rs] = sample_nball(r, d, np.sum(rs))
-    return samps
 
 def integ_lattice_in_ball(r, d, eps=.000001):
     int_size = int(np.ceil(2*r + 1))
