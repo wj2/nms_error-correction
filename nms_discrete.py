@@ -40,9 +40,7 @@ def generate_cc_types(option_list, rf_sizes, order=None, excl=False,
         reses = np.array(reses)
     rf_sizes = np.array(rf_sizes)
     option_list = np.array(option_list)
-    combos = generate_combos(len(option_list), order, replace=False, excl=excl)
-    types = np.array(list(it.product(*[range(x) for x in option_list])))
-    types = types + reses/2
+    combos, types = organize_types(option_list, order, excl, reses)
     rfs = []
     for i, c in enumerate(combos):
         c = np.array(c)

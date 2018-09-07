@@ -3,6 +3,7 @@ import numpy as np
 import scipy.optimize as sio
 
 from mixedselectivity_theory.utility import *
+import general.rf_models as rfm
 
 def rep_func(stim, trans, code_pt):
     new_pt = trans(stim)
@@ -26,6 +27,35 @@ def simulate_pop_resp(pts, trans, filt, noise_distrib=None, noise_var=5,
         snr = pwr/(nv*filt.shape[0])
     rep_pts = rep_pts + add_noise
     return rep_pts, filt, snr
+
+def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True,
+                                         reses=None, rf_tiling=None):
+    if reses is None:
+        reses = np.ones(len(option_list))
+    if order is None:
+        order = len(option_list)
+    if reses is not None:
+        reses = np.array(reses)
+    rf_sizes = np.array(rf_sizes)
+    if rf_tiling is None:
+        rf_tiling = np.ones_like(reses)
+    option_list = np.array(option_list)
+    combos, types = organize_types(option_list, order, excl, reses)
+    rfs = []
+    for i, c in enumerate(combos):
+        c = np.array(c)
+        if reses is not None:
+            sub_reses = reses[c]
+        else:
+            sub_reses = None
+        new_rfs = rfm.construct_rf_pop(rf_tiling[c], option_list[c], 
+                                        reses=sub_reses, sub_dim=c,
+                                        rf_func=rfm.make_gaussian_rf,
+                                        rf_sizes=rf_sizes[c])
+        rfs = rfs + new_rfs
+    transform = lambda stims: rfm.get_codewords(stims, rfs)
+    assert len(types) == len(set([tuple(l) for l in transform(types)]))
+    return rfs, types, transform    
 
 def decode_stimulus(rep_pts, trans, filt, orig_dim):
     inv_filt = np.linalg.pinv(filt)

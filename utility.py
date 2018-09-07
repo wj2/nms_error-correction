@@ -7,6 +7,14 @@ import general.utility as gu
 import math
 import scipy.special as sps
 
+
+def organize_types(option_list, order=None, excl=False,
+                    reses=None, pure=False):
+    combos = generate_combos(len(option_list), order, replace=False, excl=excl)
+    types = np.array(list(it.product(*[range(x) for x in option_list])))
+    types = types + reses/2
+    return combos, types
+
 def hamming_distortion(word1, word2):
     dist = np.logical_not(np.all(word1 == word2))
     return dist
