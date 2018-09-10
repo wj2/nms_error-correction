@@ -4,6 +4,7 @@ import scipy.optimize as sio
 import scipy.stats as sts
 
 from mixedselectivity_theory.utility import *
+import general.utility as gu
 import general.rf_models as rfm
 
 def rep_func(stim, trans, code_pt):
@@ -35,13 +36,15 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       neurs=None, noise_var=10,
                                       filter_func=pure_filter,
                                       power_metric='variance', samps=1000,
-                                      distortion=mse_distortion):
+                                      distortion=mse_distortion,
+                                      give_real=False):
     dist_overpwr = np.zeros((len(snrs), samps))
     for i, snr in enumerate(snrs):
         d = estimate_code_performance(c, o, n, snr, rf_size, buff, reses,
                                       rf_tiling, excl, dist_samps, p_measure,
                                       neurs, noise_var, filter_func,
-                                      power_metric, samps, distortion)
+                                      power_metric, samps, distortion,
+                                      give_real)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -49,7 +52,8 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
                               rf_tiling=None, excl=True, dist_samps=10000,
                               p_measure=np.median, neurs=None, noise_var=10,
                               filter_func=pure_filter, power_metric='variance',
-                              samps=1000, distortion=mse_distortion):
+                              samps=1000, distortion=mse_distortion,
+                              give_real=False):
     if buff is None:
         buff = rf_size
     v = (snr**2)*noise_var
@@ -68,13 +72,15 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
     dist = distortion(pts, decoded_pts, axis=1)
     return dist
     
-def decode_pop_resp(c, noisy_pts, trs, upper, lower):
+def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None):
     answers = np.zeros((noisy_pts.shape[0], c))
-    mid_pt = (upper - lower)/2
+    mid_pt = lower + (upper - lower)/2
     init_guess = np.array((mid_pt,)*c)
     for i, npt in enumerate(noisy_pts):
-        func = lambda x: np.sum((npt - trs(np.reshape(x, (1, -1))))**2)
-        r = sio.minimize(func, init_guess, bounds=((lower, upper),)*c)
+        func = lambda x: mse_distortion(npt, trs(np.reshape(x, (1, -1))))
+        if real_pts is not None:
+            init_guess = real_pts[i]
+        r = sio.minimize(func, init_guess)
         if r.success:
             answers[i] = r.x
         else:
@@ -177,7 +183,7 @@ def obtain_stretchfactor_cent(cent, rad, trans, filt, n_pts=1000):
     rep_pts, _, _ = simulate_pop_resp(pts, trans, filt, noise_var=0)
     rep_cent, _, _ = simulate_pop_resp(cent.reshape((1, -1)), trans, filt,
                                        noise_var=0)
-    stretches = np.sum(((rep_pts - rep_cent)/rad)**2, axis=1)
+    stretches = gu.euclidean_distance(rep_pts, rep_cent)/rad
     return stretches
 
 def obtain_distrib_stretchfactor(pts, rad, trans, filt,
