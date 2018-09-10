@@ -19,8 +19,8 @@ def hamming_distortion(word1, word2):
     dist = np.logical_not(np.all(word1 == word2))
     return dist
 
-def mse_distortion(word1, word2):
-    dist = np.sum((word1 - word2)**2)
+def mse_distortion(word1, word2, axis=None):
+    dist = np.sum((word1 - word2)**2, axis=axis)
     return dist
 
 def volume_nball(r, n, pos=False):
@@ -121,6 +121,11 @@ def generate_points_on_sphere(n, dim, cent=None, rad=1):
     samps = sts.norm(0, 1).rvs(dim*n).reshape((n, dim))
     normalizer = np.sqrt(np.sum(samps**2, axis=1)).reshape((n, 1))
     pts = (samps/normalizer)*rad + cent
+    return pts
+
+def sample_uniform_pts(n, dim, upper, lower):
+    pre_pts = np.random.rand(n, dim)
+    pts = (upper - lower)*pre_pts + lower
     return pts
 
 def generate_transform(m, order=2, pure=False, replace=True):
