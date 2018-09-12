@@ -44,7 +44,7 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       rf_tiling, excl, dist_samps, p_measure,
                                       neurs, noise_var, filter_func,
                                       power_metric, samps, distortion,
-                                      give_real)
+                                      give_real=give_real)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -68,7 +68,12 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
     noise_distrib = sts.norm(0, np.sqrt(noise_var))
     pts_rep, _, snr = simulate_pop_resp(pts, trs, dummy_filt,
                                         noise_distrib=noise_distrib)
-    decoded_pts = decode_pop_resp(c, pts_rep, trs, n - buff, buff)
+    if give_real:
+        give_pts = pts
+    else:
+        give_pts = None
+    decoded_pts = decode_pop_resp(c, pts_rep, trs, n - buff, buff,
+                                  real_pts=give_pts)
     dist = distortion(pts, decoded_pts, axis=1)
     return dist
     
