@@ -2,6 +2,7 @@
 import numpy as np
 import scipy.optimize as sio
 import scipy.stats as sts
+import multiprocess as mp
 
 from mixedselectivity_theory.utility import *
 import general.utility as gu
@@ -37,14 +38,16 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       filter_func=pure_filter,
                                       power_metric='variance', samps=1000,
                                       distortion=mse_distortion,
-                                      give_real=False, basin_hop=True):
+                                      give_real=False, basin_hop=True,
+                                      parallel=False):
     dist_overpwr = np.zeros((len(snrs), samps))
     for i, snr in enumerate(snrs):
         d = estimate_code_performance(c, o, n, snr, rf_size, buff, reses,
                                       rf_tiling, excl, dist_samps, p_measure,
                                       neurs, noise_var, filter_func,
                                       power_metric, samps, distortion,
-                                      give_real=give_real, basin_hop=basin_hop)
+                                      give_real=give_real, basin_hop=basin_hop,
+                                      parallel=parallel)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -53,7 +56,7 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
                               p_measure=np.median, neurs=None, noise_var=10,
                               filter_func=pure_filter, power_metric='variance',
                               samps=1000, distortion=mse_distortion,
-                              give_real=False, basin_hop=True):
+                              give_real=False, basin_hop=True, parallel=False):
     if buff is None:
         buff = rf_size
     v = (snr**2)*noise_var
@@ -73,26 +76,45 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
     else:
         give_pts = None
     decoded_pts = decode_pop_resp(c, pts_rep, trs, n - buff, buff,
-                                  real_pts=give_pts, basin_hop=basin_hop)
+                                  real_pts=give_pts, basin_hop=basin_hop,
+                                  parallel=parallel)
     dist = distortion(pts, decoded_pts, axis=1)
     return dist
     
+def _decode_opt_func(args):
+    npt, init_guess, basin_hop, step_size, niter, trs = args
+    func = lambda x: mse_distortion(npt, trs(np.reshape(x, (1, -1))))
+    if basin_hop:
+        r = sio.basinhopping(func, init_guess, stepsize=step_size,
+                                 niter=niter)
+    else:
+        r = sio.minimize(func, init_guess)
+    return r.x
+
 def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
-                    step_size=1, niter=100, basin_hop=True):
+                    step_size=1, niter=100, basin_hop=True,
+                    parallel=False):
     answers = np.zeros((noisy_pts.shape[0], c))
     mid_pt = lower + (upper - lower)/2
-    init_guess = np.array((mid_pt,)*c)
-    for i, npt in enumerate(noisy_pts):
-        func = lambda x: mse_distortion(npt, trs(np.reshape(x, (1, -1))))
-        if real_pts is not None:
-            init_guess = real_pts[i]
-        if basin_hop:
-            r = sio.basinhopping(func, init_guess, stepsize=step_size,
-                                 niter=niter)
-        else:
-            r = sio.minimize(func, init_guess)
-        answers[i] = r.x
-    return answers
+    arg_els = len(noisy_pts)
+    if real_pts is None:
+        guess = np.array((mid_pt,)*c)
+        init_guesses = np.ones((arg_els, c))*guess
+    else:
+        init_guesses = real_pts
+    step_sizes = (step_size,)*arg_els
+    niters = (niter,)*arg_els
+    basin_hops = (basin_hop,)*arg_els
+    trses = (trs,)*arg_els
+    args = zip(noisy_pts, init_guesses, basin_hops, step_sizes, niters, trses)
+    if parallel:
+        pool = mp.Pool(processes=mp.cpu_count())
+        answers = pool.map(_decode_opt_func, args)
+        pool.close()
+        pool.join()
+    else:
+        answers = map(_decode_opt_func, args)
+    return np.array(list(answers))
     
 def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True,
                                          reses=None, rf_tiling=None):
