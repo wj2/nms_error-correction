@@ -37,14 +37,14 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       filter_func=pure_filter,
                                       power_metric='variance', samps=1000,
                                       distortion=mse_distortion,
-                                      give_real=False):
+                                      give_real=False, basin_hop=True):
     dist_overpwr = np.zeros((len(snrs), samps))
     for i, snr in enumerate(snrs):
         d = estimate_code_performance(c, o, n, snr, rf_size, buff, reses,
                                       rf_tiling, excl, dist_samps, p_measure,
                                       neurs, noise_var, filter_func,
                                       power_metric, samps, distortion,
-                                      give_real=give_real)
+                                      give_real=give_real, basin_hop=basin_hop)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -53,7 +53,7 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
                               p_measure=np.median, neurs=None, noise_var=10,
                               filter_func=pure_filter, power_metric='variance',
                               samps=1000, distortion=mse_distortion,
-                              give_real=False):
+                              give_real=False, basin_hop=True):
     if buff is None:
         buff = rf_size
     v = (snr**2)*noise_var
@@ -73,11 +73,12 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
     else:
         give_pts = None
     decoded_pts = decode_pop_resp(c, pts_rep, trs, n - buff, buff,
-                                  real_pts=give_pts)
+                                  real_pts=give_pts, basin_hop=basin_hop)
     dist = distortion(pts, decoded_pts, axis=1)
     return dist
     
-def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None):
+def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
+                    step_size=1, niter=100, basin_hop=True):
     answers = np.zeros((noisy_pts.shape[0], c))
     mid_pt = lower + (upper - lower)/2
     init_guess = np.array((mid_pt,)*c)
@@ -85,11 +86,12 @@ def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None):
         func = lambda x: mse_distortion(npt, trs(np.reshape(x, (1, -1))))
         if real_pts is not None:
             init_guess = real_pts[i]
-        r = sio.minimize(func, init_guess)
-        if r.success:
-            answers[i] = r.x
+        if basin_hop:
+            r = sio.basinhopping(func, init_guess, stepsize=step_size,
+                                 niter=niter)
         else:
-            answers[i] = np.nan
+            r = sio.minimize(func, init_guess)
+        answers[i] = r.x
     return answers
     
 def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True,
