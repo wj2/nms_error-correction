@@ -8,6 +8,52 @@ from mixedselectivity_theory.utility import *
 import general.utility as gu
 import general.rf_models as rfm
 
+class ContinuousCode(object):
+
+    def __init__(self, c, o, n, v, rf_size, buff=None, reses=None,
+                 rf_tiling=None, excl=True, dist_samps=10000,
+                 p_measure=np.median, neurs=None, filter_func=pure_filter,
+                 power_metric='variance'):
+        rf_sizes = np.ones(c)*rf_size
+        ef_ret = construct_gaussian_encoding_function((n,)*c, rf_sizes,
+                                                      o, reses=reses,
+                                                      rf_tiling=rf_tiling,
+                                                      return_objects=False)
+        self.rfs, self.types, _ = ef_ret
+        self.order = o
+        self.n = n
+        self.c = c
+        self.buff = buff
+        self.power_metric = power_metric
+        self.p_measure = p_measure
+        self.dim = len(self.rfs)
+        if neurs is None:
+            self.neurs = self.dim
+        self.f = filter_func(self.neurs, self.dim)
+        p = self.evaluate_power(n_samps=dist_samps)
+        self.f = self.f*np.sqrt(v/p)
+        
+    def evaluate_power(self, n_samps=1000):
+        ds = compute_power_distribution(self.response, self.c, self.n,
+                                        self.buff, metric=self.power_metric,
+                                        n_samps=n_samps)
+        p = self.p_measure(ds)
+        return p
+
+    def __call__(self, stims):
+        return self.response(stims)
+    
+    def response(self, stims):
+        stim = np.array(stims)
+        if len(stims.shape) == 1:
+            stim = stims.reshape((1, -1))
+        resp = np.zeros((stims.shape[0], self.dim))
+        for i, rf in enumerate(self.rfs):
+            r = rf[0](stims, *rf[1])
+            resp[:, i] = r
+        resp = np.dot(resp, self.f.T)
+        return resp
+
 def rep_func(stim, trans, code_pt):
     new_pt = trans(stim)
     err = np.sum((new_pt - code_pt)**2)
@@ -39,7 +85,7 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       power_metric='variance', samps=1000,
                                       distortion=mse_distortion,
                                       give_real=False, basin_hop=True,
-                                      parallel=False):
+                                      parallel=False, oo=False):
     dist_overpwr = np.zeros((len(snrs), samps))
     for i, snr in enumerate(snrs):
         d = estimate_code_performance(c, o, n, snr, rf_size, buff, reses,
@@ -47,7 +93,7 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       neurs, noise_var, filter_func,
                                       power_metric, samps, distortion,
                                       give_real=give_real, basin_hop=basin_hop,
-                                      parallel=parallel)
+                                      parallel=parallel, oo=oo)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -56,16 +102,18 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
                               p_measure=np.median, neurs=None, noise_var=10,
                               filter_func=pure_filter, power_metric='variance',
                               samps=1000, distortion=mse_distortion,
-                              give_real=False, basin_hop=True, parallel=False):
+                              give_real=False, basin_hop=True, parallel=False,
+                              oo=False):
     if buff is None:
         buff = rf_size
     v = (snr**2)*noise_var
-    rfs, ts, trs = make_code_with_power(c, o, n, v, rf_size, buff=buff,
-                                        reses=reses, rf_tiling=rf_tiling,
-                                        excl=excl, dist_samps=dist_samps,
-                                        p_measure=p_measure, neurs=neurs,
-                                        filter_func=filter_func,
-                                        power_metric=power_metric)
+    rfs, _, trs = make_code_with_power(c, o, n, v, rf_size, buff=buff,
+                                       reses=reses, rf_tiling=rf_tiling,
+                                       excl=excl, dist_samps=dist_samps,
+                                       p_measure=p_measure, neurs=neurs,
+                                       filter_func=filter_func,
+                                       power_metric=power_metric,
+                                       object_oriented=oo)
     pts = sample_uniform_pts(samps, c, n - buff, buff)
     dummy_filt = np.identity(len(rfs))
     noise_distrib = sts.norm(0, np.sqrt(noise_var))
@@ -108,16 +156,23 @@ def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
     trses = (trs,)*arg_els
     args = zip(noisy_pts, init_guesses, basin_hops, step_sizes, niters, trses)
     if parallel:
-        pool = mp.Pool(processes=mp.cpu_count())
-        answers = pool.map(_decode_opt_func, args)
-        pool.close()
-        pool.join()
+        try:
+            pool = mp.Pool(processes=mp.cpu_count())
+            answers = pool.map(_decode_opt_func, args)
+        finally:
+            pool.close()
+            pool.join()
     else:
         answers = map(_decode_opt_func, args)
     return np.array(list(answers))
     
 def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True,
-                                         reses=None, rf_tiling=None):
+                                         reses=None, rf_tiling=None,
+                                         return_objects=True):
+    if return_objects:
+        rf_func = rfm.make_gaussian_rf
+    else:
+        rf_func = rfm.eval_gaussian_rf
     if reses is None:
         reses = np.ones(len(option_list))
     if order is None:
@@ -137,12 +192,16 @@ def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True
         else:
             sub_reses = None
         new_rfs = rfm.construct_rf_pop(rf_tiling[c], option_list[c], 
-                                        reses=sub_reses, sub_dim=c,
-                                        rf_func=rfm.make_gaussian_rf,
-                                        rf_sizes=rf_sizes[c])
+                                       reses=sub_reses, sub_dim=c,
+                                       rf_func=rf_func,
+                                       rf_sizes=rf_sizes[c],
+                                       return_objects=return_objects)
         rfs = rfs + new_rfs
-    transform = lambda stims: rfm.get_codewords(stims, rfs)
-    assert len(types) == len(set([tuple(l) for l in transform(types)]))
+    if return_objects:
+        transform = lambda stims: rfm.get_codewords(stims, rfs)
+        assert len(types) == len(set([tuple(l) for l in transform(types)]))
+    else:
+        transform = None
     return rfs, types, transform    
 
 def compute_power_distribution(trs, c, n, buff, n_samps=10000,
@@ -157,17 +216,43 @@ def compute_power_distribution(trs, c, n, buff, n_samps=10000,
     return power
 
 def make_code_with_power(c, o, n, v, rf_size, buff=None, reses=None,
-                            rf_tiling=None, excl=True, dist_samps=10000,
-                            p_measure=np.median, neurs=None, 
-                            filter_func=pure_filter, power_metric='variance'):
+                         rf_tiling=None, excl=True, dist_samps=10000,
+                         p_measure=np.median, neurs=None, object_oriented=False,
+                         filter_func=pure_filter, power_metric='variance'):
+    if object_oriented:
+        f = _make_code_with_power_oo
+    else:
+        f = _make_code_with_power_func
+    out = f(c, o, n, v, rf_size, buff=buff, reses=reses, rf_tiling=rf_tiling,
+            excl=excl, dist_samps=dist_samps, p_measure=p_measure, neurs=neurs,
+            filter_func=filter_func, power_metric=power_metric)
+    return out
+
+def _make_code_with_power_oo(c, o, n, v, rf_size, buff=None, reses=None,
+                             rf_tiling=None, excl=True, dist_samps=10000,
+                             p_measure=np.median, neurs=None,
+                             filter_func=pure_filter,
+                             power_metric='variance'):
+    code = ContinuousCode(c, o, n, v, rf_size, buff=buff, reses=reses,
+                          rf_tiling=rf_tiling, excl=excl, dist_samps=dist_samps,
+                          p_measure=p_measure, neurs=neurs,
+                          filter_func=filter_func,
+                          power_metric=power_metric)
+    return code.rfs, code.types, code
+
+def _make_code_with_power_func(c, o, n, v, rf_size, buff=None, reses=None,
+                               rf_tiling=None, excl=True, dist_samps=10000,
+                               p_measure=np.median, neurs=None,
+                               filter_func=pure_filter,
+                               power_metric='variance'):
     if buff is None:
         buff = rf_size
     rf_sizes = np.ones(c)*rf_size
     rfs, ts, trs = construct_gaussian_encoding_function((n,)*c, rf_sizes,
                                                         o, rf_tiling=rf_tiling,
-                                                        excl=excl)
+                                                        excl=excl, reses=reses)
     ds = compute_power_distribution(trs, c, n, buff, metric=power_metric,
-                                       n_samps=dist_samps)
+                                    n_samps=dist_samps)
     p = p_measure(ds)
     if neurs is None:
         neurs = len(rfs)
