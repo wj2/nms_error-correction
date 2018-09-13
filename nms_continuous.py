@@ -2,7 +2,7 @@
 import numpy as np
 import scipy.optimize as sio
 import scipy.stats as sts
-import multiprocess as mp
+import multiprocessing as mp
 
 from mixedselectivity_theory.utility import *
 import general.utility as gu
@@ -19,7 +19,9 @@ class ContinuousCode(object):
                                                       o, reses=reses,
                                                       rf_tiling=rf_tiling,
                                                       return_objects=False)
-        self.rfs, self.types, _ = ef_ret
+        prelim_rfs, self.types, _ = ef_ret
+        self.rf_func = prelim_rfs[0][0]
+        self.rfs = [prf[1] for prf in prelim_rfs]
         self.order = o
         self.n = n
         self.c = c
@@ -49,7 +51,7 @@ class ContinuousCode(object):
             stim = stims.reshape((1, -1))
         resp = np.zeros((stims.shape[0], self.dim))
         for i, rf in enumerate(self.rfs):
-            r = rf[0](stims, *rf[1])
+            r = self.rf_func(stims, *rf)
             resp[:, i] = r
         resp = np.dot(resp, self.f.T)
         return resp
