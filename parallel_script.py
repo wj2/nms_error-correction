@@ -32,7 +32,7 @@ bh_str = {True:'_basinhop', False:''}
 par_str = {True:'_par', False:''}
 oo_str = {True:'_oo', False:''}
 
-name = 'continuous-nms_{}_{}{}{}{}_{}.pkl'.format(dt, gr_str[give_real],
+name = 'continuous-nms_{}{}{}{}{}_{}.pkl'.format(dt, gr_str[give_real],
                                                   bh_str[basin_hop],
                                                   par_str[parallel],
                                                   oo_str[oo],
@@ -49,5 +49,6 @@ for i, o in enumerate(orders):
                                               parallel=parallel, oo=oo)
     perf[i] = d
 
-out_dict = {'orders':orders, 'snrs':snrs, 'perf':perf}
+out_dict = {'orders':orders, 'snrs':snrs, 'perf':perf, 'c':c, 'n':n,
+            'rf_size':rf_size}
 p.dump(out_dict, open(name, 'wb'))
