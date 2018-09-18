@@ -36,10 +36,10 @@ class ContinuousCode(object):
         self.f = self.f*np.sqrt(v/p)
         
     def evaluate_power(self, n_samps=1000):
-        ds = compute_power_distribution(self.response, self.c, self.n,
-                                        self.buff, metric=self.power_metric,
-                                        n_samps=n_samps)
-        p = self.p_measure(ds)
+        p = compute_power_distribution(self.response, self.c, self.n,
+                                       self.buff, metric=self.power_metric,
+                                       n_samps=n_samps,
+                                       cent_func=self.p_measure)
         return p
 
     def __call__(self, stims):
@@ -207,14 +207,20 @@ def construct_gaussian_encoding_function(option_list, rf_sizes, order, excl=True
     return rfs, types, transform    
 
 def compute_power_distribution(trs, c, n, buff, n_samps=10000,
-                               metric='variance'):
+                               metric='variance', cent_func=np.median):
     samps = np.random.rand(n_samps, c)
     samps = (n - 2*buff)*samps + buff
     pts = trs(samps)
+    power = compute_power(pts, metric=metric, cent_func=cent_func)
+    return power
+
+def compute_power(pts, metric='variance', cent_func=np.median):
     if metric.lower() == 'variance':
         power = np.sum(np.var(pts, axis=0))
     elif metric.lower() == 'distance':
-        power = np.sum(pts**2, axis=1)
+        power = cent_func(np.sqrt(np.sum(pts**2, axis=1)))
+    elif metric.lower() == 'squared distance':
+        power = cent_func(np.sum(pts**2, axis=1))
     return power
 
 def make_code_with_power(c, o, n, v, rf_size, buff=None, reses=None,
@@ -253,9 +259,8 @@ def _make_code_with_power_func(c, o, n, v, rf_size, buff=None, reses=None,
     rfs, ts, trs = construct_gaussian_encoding_function((n,)*c, rf_sizes,
                                                         o, rf_tiling=rf_tiling,
                                                         excl=excl, reses=reses)
-    ds = compute_power_distribution(trs, c, n, buff, metric=power_metric,
-                                    n_samps=dist_samps)
-    p = p_measure(ds)
+    p = compute_power_distribution(trs, c, n, buff, metric=power_metric,
+                                   n_samps=dist_samps, cent_func=p_measure)
     if neurs is None:
         neurs = len(rfs)
     beta = filter_func(neurs, len(rfs))*np.sqrt(v/p)
@@ -302,15 +307,18 @@ def obtain_stretchfactor_cent(cent, rad, trans, filt, n_pts=1000):
     stretches = gu.euclidean_distance(rep_pts, rep_cent)/rad
     return stretches
 
-def obtain_distrib_stretchfactor(pts, rad, trans, filt,
-                                 control_sigpower=None,
-                                 n_ptsper=10000):
+def obtain_distrib_stretchfactor(pts, rad, trans, filt, control_sigpower=None,
+                                 n_ptsper=10000, power_metric='variance',
+                                 power_cent_func=np.median):
     trans_cents, _, _ = simulate_pop_resp(pts, trans, filt, noise_var=0)
-    pwr = np.sum(np.var(trans_cents, axis=0))
+    
+    pwr = compute_power(trans_cents, metric=power_metric,
+                        cent_func=power_cent_func)
     if control_sigpower is not None:
         filt = filt*np.sqrt(control_sigpower/pwr)
         trans_cents, _, _ = simulate_pop_resp(pts, trans, filt, noise_var=0)
-        pwr = np.sum(np.var(trans_cents, axis=0))
+        pwr = compute_power(trans_cents, metric=power_metric,
+                            cent_func=power_cent_func)
     sfs = np.zeros((len(pts), n_ptsper))
     for i, pt in enumerate(pts):
         sfs[i] = obtain_stretchfactor_cent(pt, rad, trans, filt, n_pts=n_ptsper)
