@@ -92,5 +92,5 @@ if __name__ == '__main__':
         perf[i] = d
 
     out_dict = {'orders':orders, 'snrs':snrs, 'perf':perf, 'c':c, 'n':n,
-                'rf_size':rf_size}
+                'rf_size':rf_size, 'args':args}
     p.dump(out_dict, open(name, 'wb'))
