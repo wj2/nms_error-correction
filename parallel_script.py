@@ -74,11 +74,9 @@ if __name__ == '__main__':
     par_str = {True:'_par', False:''}
     oo_str = {True:'_oo', False:''}
 
-    name = 'continuous-nms_{}{}{}{}{}_{}.pkl'.format(dt, gr_str[give_real],
-                                                     bh_str[basin_hop],
-                                                     par_str[parallel],
-                                                     oo_str[oo],
-                                                     pm)
+    str_args = (args.snr_begin, args.snr_end, args.snr_n, dt, gr_str[give_real],
+                bh_str[basin_hop], par_str[parallel], oo_str[oo], pm)
+    name = 'continuous-nms-{}-{}-{}_{}{}{}{}{}_{}.pkl'.format(*str_args)
     name = os.path.join(args.outfolder, name)
 
     perf = np.zeros((len(orders), len(snrs), n_samps))
