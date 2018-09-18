@@ -219,7 +219,8 @@ def compute_power(pts, metric='variance', cent_func=np.median):
         power = np.sum(np.var(pts, axis=0))
     elif metric.lower() == 'distance':
         power = cent_func(np.sqrt(np.sum(pts**2, axis=1)))
-    elif metric.lower() == 'squared distance':
+    elif (metric.lower() == 'squared_distance'
+          or metric.lower() == 'distance_squared'):
         power = cent_func(np.sum(pts**2, axis=1))
     return power
 

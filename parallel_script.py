@@ -25,7 +25,8 @@ def create_parser():
                         'SNRs')
     parser.add_argument('-s', '--n_samps', type=int, default=1000,
                         help='sample each order/SNR this many times')
-    parser.add_argument('-p', '--power_measure', type=str, default='distance',
+    parser.add_argument('-p', '--power_measure', type=str,
+                        default='squared_distance',
                         help='measure to use to evaluate the power consumption '
                         'of a code')
     parser.add_argument('--give_real', default=False,
