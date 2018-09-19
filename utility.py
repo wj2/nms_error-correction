@@ -6,7 +6,32 @@ import general.neural_analysis as na
 import general.utility as gu
 import math
 import scipy.special as sps
+import re
+import os
+import pickle as p
 
+def stitch_pkls(pattern, folder, stitch_fields=('perf','snrs'), dims=(1, 0),
+                sort_by='snrs', sort_ax=0):
+    fls = os.listdir(folder)
+    expr = re.compile(pattern)
+    match_fls = list(filter(expr.search, fls))
+    out = {}
+    for i, fl_name in enumerate(match_fls):
+        with open(os.path.join(folder, fl_name), 'rb') as fl:
+            d = p.load(fl)
+        for j, field in enumerate(stitch_fields):
+            if i == 0:
+                out[field] = d[field]
+            else:
+                out[field] = np.concatenate((out[field], d[field]),
+                                            axis=dims[j])
+    inds = np.argsort(out[sort_by], axis=sort_ax)
+    for j, field in enumerate(stitch_fields):
+        swap_out = np.swapaxes(out[field], 0, dims[j])
+        sorted_swap_out = swap_out[inds]
+        sorted_out = np.swapaxes(sorted_swap_out, 0, dims[j])
+        out[field] = sorted_out
+    return out, d
 
 def organize_types(option_list, order=None, excl=False,
                     reses=None, pure=False):
