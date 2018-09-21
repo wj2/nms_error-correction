@@ -3,7 +3,7 @@ import itertools as it
 import numpy as np
 import scipy.stats as sts
 import scipy.optimize as sio
-import scipy.misc as sm
+import scipy.special as sm
 import general.utility as u
 import general.rf_models as ccec
 from sklearn import svm
