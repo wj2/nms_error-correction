@@ -33,6 +33,25 @@ def stitch_pkls(pattern, folder, stitch_fields=('perf','snrs'), dims=(1, 0),
         out[field] = sorted_out
     return out, d
 
+def combine_pkl_runs(pattern, folders, combine_field='perf', combine_dim=2,
+                     stitch_fields=('perf','snrs'), dims=(1,0), sort_by='snrs',
+                     sort_ax=0):
+    for i, folder in enumerate(folders):
+        out, d = stitch_pkls(pattern, folder, stitch_fields, dims,
+                              sort_by, sort_ax)
+        if i == 0:
+            full_out = out
+            args_list = (d['args'],)
+        else:
+            for j, key in enumerate(full_out.keys()):
+                if key == combine_field:
+                    full_out[key] = np.concatenate((full_out[key], out[key]),
+                                                   axis=combine_dim)
+                else:
+                    assert np.all(full_out[key] == out[key])
+            args_list = args_list + (d['args'],)
+    return full_out, args_list
+
 def organize_types(option_list, order=None, excl=False,
                     reses=None, pure=False):
     combos = generate_combos(len(option_list), order, replace=False, excl=excl)
