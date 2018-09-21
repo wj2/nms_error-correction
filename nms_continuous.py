@@ -87,7 +87,7 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       power_metric='variance', samps=1000,
                                       distortion=mse_distortion,
                                       give_real=False, basin_hop=True,
-                                      parallel=False, oo=False):
+                                      parallel=False, oo=False, n_hops=100):
     dist_overpwr = np.zeros((len(snrs), samps))
     for i, snr in enumerate(snrs):
         d = estimate_code_performance(c, o, n, snr, rf_size, buff, reses,
@@ -95,7 +95,7 @@ def estimate_code_performance_overpwr(c, o, n, snrs, rf_size, buff=None,
                                       neurs, noise_var, filter_func,
                                       power_metric, samps, distortion,
                                       give_real=give_real, basin_hop=basin_hop,
-                                      parallel=parallel, oo=oo)
+                                      parallel=parallel, oo=oo, n_hops=n_hops)
         dist_overpwr[i] = d
     return dist_overpwr
 
@@ -105,7 +105,7 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
                               filter_func=pure_filter, power_metric='variance',
                               samps=1000, distortion=mse_distortion,
                               give_real=False, basin_hop=True, parallel=False,
-                              oo=False):
+                              oo=False, n_hops=100):
     if buff is None:
         buff = rf_size
     v = (snr**2)*noise_var
@@ -127,7 +127,7 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
         give_pts = None
     decoded_pts = decode_pop_resp(c, pts_rep, trs, n - buff, buff,
                                   real_pts=give_pts, basin_hop=basin_hop,
-                                  parallel=parallel)
+                                  parallel=parallel, niter=n_hops)
     dist = distortion(pts, decoded_pts, axis=1)
     return dist
     
@@ -222,6 +222,9 @@ def compute_power(pts, metric='variance', cent_func=np.median):
     elif (metric.lower() == 'squared_distance'
           or metric.lower() == 'distance_squared'):
         power = cent_func(np.sum(pts**2, axis=1))
+    else:
+        raise IOError('the entered metric ({}) does not match an allowed '
+                      'value'.format(metric.lower()))
     return power
 
 def make_code_with_power(c, o, n, v, rf_size, buff=None, reses=None,

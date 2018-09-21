@@ -34,6 +34,9 @@ def create_parser():
                         'at the correct value of the stimulus')
     parser.add_argument('--basin_hop', default=True, action='store_false',
                         help='use basinhopping')
+    parser.add_argument('--n_basin_hops', default=100, type=int,
+                        help='the number of initializations to use for the '
+                        'decoding procedure')
     parser.add_argument('--parallel', default=True, action='store_false',
                         help='run in parallel')
     parser.add_argument('--oo', default=True, action='store_false',
@@ -63,6 +66,7 @@ if __name__ == '__main__':
     pm = args.power_measure
     give_real = args.give_real
     basin_hop = args.basin_hop
+    n_hops = args.n_basin_hops
     parallel = args.parallel
     oo = args.oo
 
@@ -87,7 +91,8 @@ if __name__ == '__main__':
                                                   samps=n_samps, excl=excl,
                                                   give_real=give_real, 
                                                   basin_hop=basin_hop,
-                                                  parallel=parallel, oo=oo)
+                                                  parallel=parallel, oo=oo,
+                                                  n_hops=n_hops)
         perf[i] = d
 
     out_dict = {'orders':orders, 'snrs':snrs, 'perf':perf, 'c':c, 'n':n,
