@@ -50,7 +50,7 @@ def combine_pkl_runs(pattern, folders, combine_field='perf', combine_dim=2,
                 else:
                     assert np.all(full_out[key] == out[key])
             args_list = args_list + (d['args'],)
-    return full_out, args_list
+    return full_out, args_list, d
 
 def organize_types(option_list, order=None, excl=False,
                     reses=None, pure=False):
