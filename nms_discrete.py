@@ -458,14 +458,37 @@ def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False,
         p_e = min(1, p_e)
     return p_e
 
-def _nnup_density_arg(c, o, v, noisevar, n_i=5, rf=1, excl=False):
+def _nnup_density_arg(c, o, v, noisevar, n_i=5, rf=1, excl=False,
+                      subdim=False, eps=10):
     pwr = analytical_code_variance(o, c, n_i, rf=rf, excl=excl)
+    if subdim:
+        ds = analytical_code_terms(o, c, n_i, rf, excl=excl)
+        v = (v - ds)/eps
     trans_term = np.sqrt(v/pwr)
     delt = analytical_code_distance(o, c, excl=excl)
     nv = 2*np.sqrt(noisevar)
     arg = trans_term*(delt/nv)
     return arg
 
+def maximize_distance(c, v, noisevar, n_i, excl=False, subdim=True, eps=10,
+                      rf=None, rf_lim=None):
+    if rf_lim is None:
+        rf_lim = n_i
+    orders = np.arange(1, c + 1, 1)
+    if rf is not None:
+        rf = np.arange(1, rf_lim + 1, 1)
+    else:
+        rf = (rf,)
+    all_combs = it.combinations(orders, rf)
+    vals = np.zeros(len(all_combs))
+    for i, comb in enumerate(all_combs):
+        o, r = comb
+        argv = _nnup_density_arg(c, o, v, noisevar, n_i=n_i, rf=r, excl=excl,
+                                 subdim=subdim, eps=eps)
+        vals[i] = argv
+    maxpar = all_combs[np.argmax(vals)]
+    return maxpar, vals, argv
+        
 def analytical_correct_probability_nnup(c, o, v, noisevar, n_i=5, excl=False):
     return 1 - analytical_error_probability_nnup(c, o, v, noisevar, n_i=n_i,
                                                  excl=excl)
