@@ -256,14 +256,12 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
     filt_samps = np.dot(samps, filt.T)
     m = types_trans.shape[1]
     filt_all = np.dot(types_trans, filt.T)
-    sds = u.euclidean_distance(filt_all[0], filt_all[1:])
     pwr2 = pwr_func(filt_samps)
-    snr = pwr2/(noise_var*filt.shape[0])
+    snr = np.sqrt(pwr2/noise_var)
     nstd = np.sqrt(noise_var)
     filt_noisy_samps = filt_samps + sts.norm(0, nstd).rvs(filt_samps.shape)
     noisy_samps = np.dot(inv_filt, filt_noisy_samps.T).T
     noise_dists = np.sqrt(np.sum((noisy_samps - samps)**2, axis=1))
-    coeff = np.sqrt(noise_var*nofilt_pwr*neurs/(code_pwr*m))
     dec_words = np.zeros((n_samps, types.shape[1]))
     corr = np.zeros(n_samps)
     for i, ns in enumerate(noisy_samps):
@@ -488,6 +486,11 @@ def maximize_distance(c, v, noisevar, n_i, excl=False, subdim=True, eps=10,
         vals[i] = argv
     maxpar = all_combs[np.argmax(vals)]
     return maxpar, vals, argv
+
+def optimal_o(n, e):
+    num = sm.lambertw(np.exp(1)*e) - 1
+    denom = np.log(n)
+    return num/denom
         
 def analytical_correct_probability_nnup(c, o, v, noisevar, n_i=5, excl=False):
     return 1 - analytical_error_probability_nnup(c, o, v, noisevar, n_i=n_i,
@@ -859,7 +862,8 @@ def compute_num_neighbors(c, o, n_i, rf):
 
 def distance_energy_per_unit(c, o, e, n_i, eps, streams=1, excl=False,
                              include_cost=True):
-    sub_c = (c/streams) + 1
+    # sub_c = (c/streams) + 1
+    sub_c = c
     assert(int(sub_c) == sub_c)
     assert(sub_c >= o)
     o_delta2 = analytical_code_distance(o, sub_c, excl=excl)**2
@@ -870,6 +874,18 @@ def distance_energy_per_unit(c, o, e, n_i, eps, streams=1, excl=False,
     if np.isnan(delta2) or d > e:
         delta2 = -1
     return delta2
+
+def total_energy_order_transitions(c, o, ns):
+    first_term = ns*c - (ns + 1)*o
+    second_term = sm.comb(c, o)*(ns**o)
+    es = first_term*second_term
+    return es
+
+def total_energy_order_transitions_all(c, ns):
+    bounds = np.zeros((c - 1, len(ns)))
+    for i, o in enumerate(range(1, c)):
+        bounds[i] = total_energy_order_transitions(c, o, ns)
+    return bounds
 
 def rigotti_repl(c, o, n_i, snrs, times_samp=10, excl=False, 
                  neurs=1000, nuis=False, nuis_prob=.5, bs_samps=1000):
@@ -909,3 +925,4 @@ def rigotti_repl(c, o, n_i, snrs, times_samp=10, excl=False,
             feat_incorrs[j, i] = u.bootstrap_list(acd_incorr[j].flatten(),
                                                   np.mean, bs_samps)
     return c_dims, ic_dims, feat_corrs, feat_incorrs
+
