@@ -114,10 +114,20 @@ def get_filt_mindist(types, trans, neurs, pwr, with_filt=mixed_filter):
     ds = find_distances(filt_types)
     return np.min(ds)
 
+def gaussian_noise(samps, noise_pwr):
+    noisy_samps = samps + sts.norm(0, noise_pwr).rvs(samps.shape)
+    return noisy_samps
+
+def poisson_noise(samps, noise_pwr):
+    noisy_samps = sts.poisson.rvs(samps)
+    return noisy_samps
+
 def estimate_real_perc_correct(c, o, n_i, noisevar, v, n_samps=1000,
                                excl=False, cc_rf=None, subdim=False,
                                distortion_func=hamming_distortion, 
-                               eps=1, bs=True, pwr_func=None):
+                               eps=1, bs=True,
+                               pwr_func=empirical_variance_power,
+                               noise_func=gaussian_noise):
     if cc_rf is None:
         _, bt, trs, _ = generate_types((n_i,)*c, order=o, excl=excl)
     else:
@@ -126,7 +136,8 @@ def estimate_real_perc_correct(c, o, n_i, noisevar, v, n_samps=1000,
                                        neurs=trs(bt).shape[1], 
                                        n_samps=n_samps, subdim=subdim,
                                        distortion_func=distortion_func,
-                                       eps=eps, pwr_func=pwr_func)
+                                       eps=eps, pwr_func=pwr_func,
+                                       noise_func=noise_func)
     _, _, _, corr = out
     if bs:
         corr = u.bootstrap_list(corr, np.mean, n=n_samps)
@@ -215,18 +226,20 @@ def decode_single_attribute(all_words, enc_words, orig_words, noise_words,
             corr_matrix[j] = u.bootstrap_list(corr, np.mean, resample)
         accuracy_dims.append(corr_matrix)
     return accuracy_dims
-        
+
 def estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, var, n_samps=1000,
                                        excl=False, cc_rf=None, subdim=False,
                                        distortion_func=hamming_distortion,
-                                       eps=1, bs=True, pwr_func=None):
+                                       eps=1, bs=True, pwr_func=None,
+                                       noise_func=gaussian_noise):
     vs = np.zeros((len(var), n_samps))
     for i, v in enumerate(var):
         vs[i] = estimate_real_perc_correct(c, o, n_i, noisevar, v, 
                                            n_samps=n_samps, excl=excl, 
                                            cc_rf=cc_rf, subdim=subdim, eps=eps,
                                            distortion_func=distortion_func, 
-                                           bs=bs, pwr_func=pwr_func)
+                                           bs=bs, pwr_func=pwr_func,
+                                           noise_func=noise_func)
     return vs
 
 def empirical_variance_power(samps):
@@ -242,7 +255,8 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
                                  with_filt=pure_filter, n_samps=1000, 
                                  pwr_func=empirical_variance_power, 
                                  samp_inds=None, subdim=False, eps=1,
-                                 distortion_func=hamming_distortion):
+                                 distortion_func=hamming_distortion,
+                                 noise_func=gaussian_noise):
     if pwr_func is None:
         pwr_func = empirical_variance_power
     if samp_inds is None:
@@ -264,7 +278,7 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
     pwr2 = pwr_func(filt_samps)
     snr = np.sqrt(pwr2/noise_var)
     nstd = np.sqrt(noise_var)
-    filt_noisy_samps = filt_samps + sts.norm(0, nstd).rvs(filt_samps.shape)
+    filt_noisy_samps = noise_func(filt_samps, nstd)
     noisy_samps = np.dot(inv_filt, filt_noisy_samps.T).T
     noise_dists = np.sqrt(np.sum((noisy_samps - samps)**2, axis=1))
     dec_words = np.zeros((n_samps, types.shape[1]))
