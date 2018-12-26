@@ -117,16 +117,16 @@ def get_filt_mindist(types, trans, neurs, pwr, with_filt=mixed_filter):
 def estimate_real_perc_correct(c, o, n_i, noisevar, v, n_samps=1000,
                                excl=False, cc_rf=None, subdim=False,
                                distortion_func=hamming_distortion, 
-                               eps=1, bs=True):
+                               eps=1, bs=True, pwr_func=None):
     if cc_rf is None:
         _, bt, trs, _ = generate_types((n_i,)*c, order=o, excl=excl)
     else:
         _, bt, trs = generate_cc_types((n_i,)*c, cc_rf, order=o, excl=excl)
     out = simulate_transform_code_full(bt, trs, noisevar, v, 
-                                      neurs=trs(bt).shape[1], 
-                                      n_samps=n_samps, subdim=subdim,
-                                      distortion_func=distortion_func,
-                                      eps=eps)
+                                       neurs=trs(bt).shape[1], 
+                                       n_samps=n_samps, subdim=subdim,
+                                       distortion_func=distortion_func,
+                                       eps=eps, pwr_func=pwr_func)
     _, _, _, corr = out
     if bs:
         corr = u.bootstrap_list(corr, np.mean, n=n_samps)
@@ -219,14 +219,14 @@ def decode_single_attribute(all_words, enc_words, orig_words, noise_words,
 def estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, var, n_samps=1000,
                                        excl=False, cc_rf=None, subdim=False,
                                        distortion_func=hamming_distortion,
-                                       eps=1, bs=True):
+                                       eps=1, bs=True, pwr_func=None):
     vs = np.zeros((len(var), n_samps))
     for i, v in enumerate(var):
         vs[i] = estimate_real_perc_correct(c, o, n_i, noisevar, v, 
                                            n_samps=n_samps, excl=excl, 
                                            cc_rf=cc_rf, subdim=subdim, eps=eps,
                                            distortion_func=distortion_func, 
-                                           bs=bs)
+                                           bs=bs, pwr_func=pwr_func)
     return vs
 
 def empirical_variance_power(samps):
@@ -235,11 +235,16 @@ def empirical_variance_power(samps):
 def empirical_radius_power(samps):
     return np.mean(np.sum(samps**2, axis=1))
 
+def empirical_l1_power(samps):
+    return np.mean(np.sqrt(np.sum(samps**2, axis=1)))
+
 def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
                                  with_filt=pure_filter, n_samps=1000, 
                                  pwr_func=empirical_variance_power, 
                                  samp_inds=None, subdim=False, eps=1,
                                  distortion_func=hamming_distortion):
+    if pwr_func is None:
+        pwr_func = empirical_variance_power
     if samp_inds is None:
         samp_inds = np.random.randint(0, len(types), size=n_samps)
     types_trans = trans(types)
@@ -355,6 +360,11 @@ def analytical_code_variance(o, c, n, rf=1, excl=False):
                     for o_i in range(1, o + 1)])*rf
     return p
 
+def analytical_code_variance_l1(o, c, n, rf=1, excl=False):
+    pwr = analytical_code_variance(o, c, n, rf=rf, excl=excl)
+    l1_pwr = np.sqrt(pwr)
+    return l1_pwr
+
 def analytical_code_variance_cc(o, c, n, sig_rf, excl=False):
     assert(o <= c)
     if excl:
@@ -456,9 +466,14 @@ def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False,
         p_e = min(1, p_e)
     return p_e
 
+def ratio_l1(c, o, n_i=5, excl=True, rf=1):
+    cd = analytical_code_distance(o, c, excl=excl)
+    cp = analytical_code_variance(o, c, n_i, rf=rf, excl=excl)
+    return (cd**2)/np.sqrt(cp)
+
 def _nnup_density_arg(c, o, v, noisevar, n_i=5, rf=1, excl=False,
-                      subdim=False, eps=10):
-    pwr = analytical_code_variance(o, c, n_i, rf=rf, excl=excl)
+                      subdim=False, eps=10, pwr_func=analytical_code_variance):
+    pwr = pwr_func(o, c, n_i, rf=rf, excl=excl)
     if subdim:
         ds = analytical_code_terms(o, c, n_i, rf, excl=excl)
         v = (v - ds)/eps
@@ -595,11 +610,12 @@ def error_upper_bound_overpwr(c, o, vs, noisevar, n_i=5, excl=False):
 
 def pwr_require_err(target_pe, c, o, n_i, eps=1, rf=1, subdim=False,
                     noisevar=1, excl=True, distortion='hamming',
-                    lg=10**(5)):
+                    lg=10**(5), pwr_func=analytical_code_variance):
     def func(v):
         err = perr_per_energy(c, o, n_i, v, eps, rf, noisevar,
                               distortion=distortion, excl=excl,
-                              subdim=subdim, bound_at_one=False)
+                              subdim=subdim, bound_at_one=False,
+                              pwr_func=pwr_func)
         return np.abs(err - target_pe)
     if subdim:
         e_bound = analytical_code_terms_cc(o, c, n_i, rf, excl=excl)
@@ -706,7 +722,8 @@ def power_modulation_beta(n_mult, c, o, n_i):
     print('p', np.sqrt(np.sum(pf_inv**2)))
 
 def perr_per_energy(c, o, n_i, e, eps, sig, nv=10, excl=True, subdim=True,
-                    distortion='mse', bound_at_one=True):
+                    distortion='mse', bound_at_one=True,
+                    pwr_func=analytical_code_variance):
     if subdim:
         dims = analytical_code_terms_cc(o, c, n_i, sig, excl=excl)
         v = (1/eps)*(e - dims)
@@ -715,7 +732,8 @@ def perr_per_energy(c, o, n_i, e, eps, sig, nv=10, excl=True, subdim=True,
     if v >= 0:
         est_err = hetero_error_full_ana_nnub(c, o, v, nv, n_i, sig,
                                              bound_at_one=bound_at_one,
-                                             distortion=distortion)   
+                                             distortion=distortion,
+                                             pwr_func=pwr_func)   
     else:
         est_err = np.inf
     return est_err
@@ -825,9 +843,11 @@ def get_sse(c, o, n_i, rf=1):
     return mse_tot
 
 def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, bound_at_one=True,
-                               distortion='mse'):
+                               distortion='mse',
+                               pwr_func=analytical_code_variance):
     excl = True
-    arg = _nnup_density_arg(c, o, v, noisevar, n_i, rf=rf, excl=excl)
+    arg = _nnup_density_arg(c, o, v, noisevar, n_i, rf=rf, excl=excl,
+                            pwr_func=pwr_func)
     dense_val = 1 - sts.norm(0, 1).cdf(arg)
     num_neigh = _close_words(c, o, n_i, excl=excl, rf=rf)
     if distortion == 'mse':
@@ -861,13 +881,14 @@ def compute_num_neighbors(c, o, n_i, rf):
     return md, n_neigh
 
 def distance_energy_per_unit(c, o, e, n_i, eps, streams=1, excl=False,
-                             include_cost=True):
+                             include_cost=True,
+                             pwr_func=analytical_code_variance):
     # sub_c = (c/streams) + 1
     sub_c = c
     assert(int(sub_c) == sub_c)
     assert(sub_c >= o)
     o_delta2 = analytical_code_distance(o, sub_c, excl=excl)**2
-    p = streams*analytical_code_variance(o, sub_c, n_i, excl=excl)
+    p = streams*pwr_func(o, sub_c, n_i, excl=excl)
     d = analytical_code_terms(o, sub_c, n_i, excl=excl)
     v = (1/eps)*(e - include_cost*streams*d)
     delta2 = np.sqrt(v*o_delta2/p)
