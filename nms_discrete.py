@@ -10,6 +10,15 @@ from sklearn import svm
 
 from mixedselectivity_theory.utility import *
 
+def empirical_variance_power(samps):
+    return np.sum(np.var(samps, axis=0))
+
+def empirical_radius_power(samps):
+    return np.mean(np.sum(samps**2, axis=1))
+
+def empirical_l1_power(samps):
+    return np.mean(np.sqrt(np.sum(samps**2, axis=1)))
+
 def generate_types(option_list, order=None, pure=False, excl=False):
     types = list(it.product(*[range(x) for x in option_list]))
     binary_types = np.zeros((len(types), np.sum(option_list)))
@@ -54,6 +63,67 @@ def generate_cc_types(option_list, rf_sizes, order=None, excl=False,
     transform = lambda stims: ccec.get_codewords(stims, rfs)
     assert len(types) == len(set([tuple(l) for l in transform(types)]))
     return rfs, types, transform
+
+def random_sparse_code(c, o, n, n_codes=1000, excl=True, subsample_pairs=None):
+    active = int(np.round(code_radius(c, o, excl=excl)**2))
+    terms = int(np.round(analytical_code_terms(o, c, n, excl=excl)))
+    sparsity = active/terms
+    n_words = n**c
+    possible_words = np.array(list(it.combinations(range(terms), active)))
+    min_dists = np.zeros(n_codes)
+    for i in range(n_codes):
+        codebook = np.random.choice(range(possible_words.shape[0]), n_words,
+                                    replace=False)
+        min_dist = terms
+        if (subsample_pairs is not None
+            and subsample_pairs < sm.comb(n_words, 2)):
+            pairs = np.random.choice(range(n_words), (subsample_pairs, 2))
+        else:
+            pairs = np.array(list(it.combinations(range(n_words), 2)))
+        for pair in pairs:
+            w1 = set(possible_words[codebook[pair[0]]])
+            w2 = set(possible_words[codebook[pair[1]]])
+            dist = np.sqrt(2*(active - len(w1.intersection(w2))))
+            if dist > 0:
+                min_dist = min(min_dist, dist)
+        min_dists[i] = min_dist
+    return min_dists
+
+def compare_random_determined(c, o, n, n_codes=1000, power_norm=True,
+                              excl=True, subsample_pairs=None):
+    radius = code_radius(c, o, excl=excl)
+    mds = random_sparse_code(c, o, n, n_codes, excl=excl,
+                             subsample_pairs=subsample_pairs)/radius
+    analytical_dist = analytical_code_distance(o, c, excl=excl)/radius
+    return mds, analytical_dist
+
+def random_overlaps(c, o, n, overlap, excl=True):
+    active = int(np.round(code_radius(c, o, excl=excl)**2))
+    terms = int(np.round(analytical_code_terms(o, c, n, excl=excl)))
+    num = (sm.comb(active, overlap)
+           *sm.comb(terms - active, active - overlap))
+    norm = sm.comb(terms, active)
+    prob_est = num / norm
+    return prob_est
+
+def random_determined_mindist(c, o, n, max_overlap, excl=True, eps=.0001):
+    active = int(np.round(code_radius(c, o, excl=excl)**2))
+    terms = int(np.round(analytical_code_terms(o, c, n, excl=excl)))
+    overlaps = range(active + 1)
+    pair_probs = list([random_overlaps(c, o, n, overlap, excl=excl)
+                       for overlap in overlaps])
+    p_any = min(sum(pair_probs[:max_overlap + 1]) + pair_probs[-1], 1)
+    num_pairs = sm.comb(n**c, 2)
+    total_pairs = sm.comb(sm.comb(terms, active), 2)
+    p_asgood_random = p_any**num_pairs
+    return p_asgood_random
+
+def compare_mindist(c, o, n, excl=True, eps=.0001):
+    active = int(np.round(code_radius(c, o, excl=excl)**2))    
+    code_md = analytical_code_distance(o, c, excl=excl)
+    mo = int(np.round(active - (code_md**2)/2))
+    p_as = random_determined_mindist(c, o, n, mo, excl=excl, eps=eps)
+    return p_as
 
 def get_md_var_dim_cn_allorders(c, n):
     mds = np.zeros(c)
@@ -241,15 +311,6 @@ def estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, var, n_samps=1000,
                                            bs=bs, pwr_func=pwr_func,
                                            noise_func=noise_func)
     return vs
-
-def empirical_variance_power(samps):
-    return np.sum(np.var(samps, axis=0))
-
-def empirical_radius_power(samps):
-    return np.mean(np.sum(samps**2, axis=1))
-
-def empirical_l1_power(samps):
-    return np.mean(np.sqrt(np.sum(samps**2, axis=1)))
 
 def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
                                  with_filt=pure_filter, n_samps=1000, 
@@ -539,8 +600,12 @@ def probe_orders_analytical(c, n, mults, excl=False):
                                                         excl=excl)
     return ps, delts, terms, os 
 
-def code_radius(c, o, l=1):
-    return l*np.sqrt(np.sum([sm.comb(c, o_i) for o_i in range(1, o + 1)]))
+def code_radius(c, o, l=1, excl=False):
+    if excl:
+        rad = l*np.sqrt(sm.comb(c, o))
+    else:
+        rad = l*np.sqrt(np.sum([sm.comb(c, o_i) for o_i in range(1, o + 1)]))
+    return rad
 
 def shannon_power(c, o, n_i=5, l=1, block_ratio=1):
     rad = code_radius(c, o, l=l*np.sqrt(block_ratio))**2
