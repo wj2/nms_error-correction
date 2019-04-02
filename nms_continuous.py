@@ -132,13 +132,14 @@ def estimate_code_performance(c, o, n, snr, rf_size, buff=None, reses=None,
     return dist
     
 def _decode_opt_func(args):
-    npt, init_guess, basin_hop, step_size, niter, trs = args
+    npt, init_guess, basin_hop, step_size, niter, trs, bounds = args
     func = lambda x: mse_distortion(npt, trs(np.reshape(x, (1, -1))))
     if basin_hop:
+        min_params = {'bounds':bounds}
         r = sio.basinhopping(func, init_guess, stepsize=step_size,
-                                 niter=niter)
+                             niter=niter, minimizer_kwargs=min_params)
     else:
-        r = sio.minimize(func, init_guess)
+        r = sio.minimize(func, init_guess, bounds=bounds)
     return r.x
 
 def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
@@ -147,6 +148,8 @@ def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
     answers = np.zeros((noisy_pts.shape[0], c))
     mid_pt = lower + (upper - lower)/2
     arg_els = len(noisy_pts)
+    bounds_i = np.array((lower, upper)).reshape((1, 2))
+    bounds = (bounds_i,)*arg_els
     if real_pts is None:
         guess = np.array((mid_pt,)*c)
         init_guesses = np.ones((arg_els, c))*guess
@@ -156,7 +159,8 @@ def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
     niters = (niter,)*arg_els
     basin_hops = (basin_hop,)*arg_els
     trses = (trs,)*arg_els
-    args = zip(noisy_pts, init_guesses, basin_hops, step_sizes, niters, trses)
+    args = zip(noisy_pts, init_guesses, basin_hops, step_sizes, niters,
+               trses, bounds)
     if parallel:
         try:
             pool = mp.Pool(processes=mp.cpu_count())
