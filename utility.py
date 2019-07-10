@@ -64,7 +64,7 @@ def hamming_distortion(word1, word2):
     return dist
 
 def mse_distortion(word1, word2, axis=None):
-    dist = np.sum((word1 - word2)**2, axis=axis)
+    dist = np.nansum((word1 - word2)**2, axis=axis)
     return dist
 
 def volume_nball(r, n, pos=False):

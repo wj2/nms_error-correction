@@ -139,8 +139,13 @@ def _decode_opt_func(args):
         r = sio.basinhopping(func, init_guess, stepsize=step_size,
                              niter=niter, minimizer_kwargs=min_params)
     else:
-        r = sio.minimize(func, init_guess, bounds=bounds)
-    return r.x
+        r = sio.minimize(func, init_guess) 
+    result = r.x
+    lower, upper = bounds[:, 0], bounds[:, 1]
+    is_res_oob = np.any(np.logical_or(lower > result, upper < result))
+    if is_res_oob:
+        result = np.ones_like(result)*np.nan
+    return result
 
 def decode_pop_resp(c, noisy_pts, trs, upper, lower, real_pts=None,
                     step_size=1, niter=100, basin_hop=True,

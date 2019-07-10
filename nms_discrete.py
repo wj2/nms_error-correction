@@ -19,6 +19,63 @@ def empirical_radius_power(samps):
 def empirical_l1_power(samps):
     return np.mean(np.sqrt(np.sum(samps**2, axis=1)))
 
+def analytical_effective_dimension(k, o, n):
+    k_o = sm.comb(k, o)
+    no = n**o
+    do = k_o*no
+    num = do
+    denom = 1 + (1/do)*(k_o - 1)**2
+    return num/denom
+
+def max_overlap(k, o, n):
+    return n**sm.comb(k - 3, o - 1)
+
+def compare_cov_theory(k, o, n):
+    out = code_effective_dimension(k, o, n)
+    do = analytical_code_terms(o, k, n, excl=True)
+    no = n**o
+    n2o = n**(2*o)
+    num = do/n2o
+    denom = 1/n2o + (do - 1)*out[2]
+    theorvar = (sm.comb(sm.comb(k, o), 2)*2/((do - 1)**2))**2
+    num2 = do*((1/(do))*2*sm.comb(sm.comb(k, o), 2))**2
+    theor2var = num2/(do - 1)**2
+    denom_t = 1/n2o + (do - 1)*theorvar
+    print('theor2actual', theor2var)
+    print('emp   actual', out[2])
+    print('theor actual', num/denom)
+    print('theor approx', analytical_effective_dimension(k, o, n))
+    print(out)
+
+def compute_cov(data, demean=True):
+    if demean:
+        cov_mat = np.cov(data)
+    else:
+        cov_mat = np.zeros((data.shape[0], data.shape[0]))
+        for row in data.T:
+            out_mat = np.outer(row, row)
+            cov_mat = cov_mat + np.outer(row, row)
+        print(cov_mat[0])
+        print(cov_mat[1])
+        cov_mat = cov_mat / (data.shape[1] - 1)
+    return cov_mat
+    
+def code_effective_dimension(k, o, n, rf_sizes=None):
+    if rf_sizes is None:
+        _, bt, trs, _ = generate_types((n,)*k, order=o, excl=True)
+        pop_size = analytical_code_terms(o, k, n, excl=True)
+    else:
+        _, bt, trs = generate_cc_types((n,)*k, rf_sizes, order=o, excl=True)
+        pop_size = analytical_code_terms_cc(o, k, n, rf_sizes[0], excl=True)
+    resps = trs(bt)
+    cov_mat = compute_cov(resps.T, demean=False)
+    nd_mask = ~np.eye(cov_mat.shape[0], dtype=bool)
+    nondiag = cov_mat[nd_mask]
+    cij_emp = np.mean(nondiag**2)
+    evs, _ = np.linalg.eig(cov_mat)
+    dim = (np.sum(evs)**2)/np.sum(evs**2)
+    return dim.real, pop_size, cij_emp
+
 def generate_types(option_list, order=None, pure=False, excl=False):
     types = list(it.product(*[range(x) for x in option_list]))
     binary_types = np.zeros((len(types), np.sum(option_list)))
@@ -134,26 +191,32 @@ def gaussian_noise(samps, noise_pwr):
     noisy_samps = samps + sts.norm(0, noise_pwr).rvs(samps.shape)
     return noisy_samps
 
-def poisson_noise(samps, noise_pwr):
+def poisson_noise(samps, noise_pwr, baseline=None):
+    if baseline is not None:
+        samps[samps < baseline] = baseline
     noisy_samps = sts.poisson.rvs(samps)
     return noisy_samps
 
 def estimate_real_perc_correct(c, o, n_i, noisevar, v, n_samps=1000,
                                excl=False, cc_rf=None, subdim=False,
                                distortion_func=hamming_distortion, 
-                               eps=1, bs=True,
+                               eps=1, bs=True, input_noise=0,
                                pwr_func=empirical_variance_power,
-                               noise_func=gaussian_noise):
+                               noise_func=gaussian_noise,
+                               local_input_noise=True):
     if cc_rf is None:
-        _, bt, trs, _ = generate_types((n_i,)*c, order=o, excl=excl)
+        ts, bt, trs, _ = generate_types((n_i,)*c, order=o, excl=excl)
     else:
-        _, bt, trs = generate_cc_types((n_i,)*c, cc_rf, order=o, excl=excl)
+        _, ts, trs = generate_cc_types((n_i,)*c, cc_rf, order=o, excl=excl)
+        bt = ts
     out = simulate_transform_code_full(bt, trs, noisevar, v, 
                                        neurs=trs(bt).shape[1], 
                                        n_samps=n_samps, subdim=subdim,
                                        distortion_func=distortion_func,
                                        eps=eps, pwr_func=pwr_func,
-                                       noise_func=noise_func)
+                                       noise_func=noise_func,
+                                       num_types=ts, input_noise=input_noise,
+                                       local_input_noise=local_input_noise)
     _, _, _, corr = out
     if bs:
         corr = u.bootstrap_list(corr, np.mean, n=n_samps)
@@ -247,7 +310,8 @@ def estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, var, n_samps=1000,
                                        excl=False, cc_rf=None, subdim=False,
                                        distortion_func=hamming_distortion,
                                        eps=1, bs=True, pwr_func=None,
-                                       noise_func=gaussian_noise):
+                                       noise_func=gaussian_noise,
+                                       input_noise=0):
     vs = np.zeros((len(var), n_samps))
     for i, v in enumerate(var):
         vs[i] = estimate_real_perc_correct(c, o, n_i, noisevar, v, 
@@ -255,7 +319,8 @@ def estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, var, n_samps=1000,
                                            cc_rf=cc_rf, subdim=subdim, eps=eps,
                                            distortion_func=distortion_func, 
                                            bs=bs, pwr_func=pwr_func,
-                                           noise_func=noise_func)
+                                           noise_func=noise_func,
+                                           input_noise=input_noise)
     return vs
 
 def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
@@ -263,7 +328,8 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
                                  pwr_func=empirical_variance_power, 
                                  samp_inds=None, subdim=False, eps=1,
                                  distortion_func=hamming_distortion,
-                                 noise_func=gaussian_noise):
+                                 noise_func=gaussian_noise, input_noise=0,
+                                 num_types=None, local_input_noise=True):
     if pwr_func is None:
         pwr_func = empirical_variance_power
     if samp_inds is None:
@@ -275,11 +341,29 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
     nofilt_pwr = np.sum(np.var(types_trans, axis=0))
     filt = with_filt(neurs, types_trans.shape[1])
     filt_all = np.dot(types_trans, filt.T)
-    samps = types_trans[samp_inds]    
+    samps = types_trans[samp_inds]
+    if input_noise > 0 and local_input_noise:
+        nt_transform_dict = dict(zip([tuple(nt) for nt in num_types],
+                                     types_trans))
+        num_types = np.array(num_types)
+        input_samps = num_types[samp_inds]
+        noise_arr = np.random.rand(*input_samps.shape) < input_noise
+        flip_side = (np.random.rand(*input_samps.shape) < .5)*-1
+        num_vals = int(np.round(num_types.shape[0]**(1/num_types.shape[1]), 0))
+        noise_samps = (input_samps + noise_arr*flip_side) % num_vals 
+        samps_in = np.array(list([nt_transform_dict[tuple(ns)]
+                                  for ns in noise_samps]))
+    elif input_noise > 0 and not local_input_noise:
+        orig_samps = types[samp_inds]
+        inp_noise = np.random.rand(*orig_samps.shape) < input_noise
+        noise_samps = (orig_samps + inp_noise) % 2
+        samps_in = trans(noise_samps)
+    else:
+        samps_in = samps
     pwr = pwr_func(filt_all)
     filt = filt*np.sqrt(code_pwr/pwr)
     inv_filt = np.linalg.pinv(filt)
-    filt_samps = np.dot(samps, filt.T)
+    filt_samps = np.dot(samps_in, filt.T)
     m = types_trans.shape[1]
     filt_all = np.dot(types_trans, filt.T)
     pwr2 = pwr_func(filt_samps)
@@ -413,7 +497,7 @@ def analytical_code_terms(o, c, n, excl=False):
 
 def analytical_code_terms_cc(o, c, n, sig_rf, excl=False):
     assert(o <= c)
-    if o == 1:
+    if o == 1 or sig_rf == 1:
         terms = analytical_code_terms(o, c, n, excl=excl)
     else:
         if excl:
@@ -478,9 +562,11 @@ def _ident_close_words(c, o, n_i, rf, cent=True):
     return s[md_mask], s[ind]    
 
 def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False,
-                                      bound_at_one=True):
+                                      bound_at_one=True,
+                                      pwr_func=analytical_code_variance):
     n_e = _close_words(c, o, n_i=n_i, excl=excl)
-    arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl)
+    arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
+                            pwr_func=pwr_func)
     dense_val = sts.norm(0, 1).cdf(arg)
     p_e = n_e*(1 - dense_val)
     if bound_at_one:
@@ -627,9 +713,10 @@ def capacity_block_trans_overpwr(c, o, vs, noisevar, n_i=5, block=None):
                 for v_i in vs]
     return np.array(caps)
 
-def error_upper_bound_overpwr(c, o, vs, noisevar, n_i=5, excl=False):
+def error_upper_bound_overpwr(c, o, vs, noisevar, n_i=5, excl=False,
+                              pwr_func=analytical_code_variance):
     eps = [analytical_error_probability_nnup(c, o, v_i, noisevar, n_i,
-                                             excl=excl)
+                                             excl=excl, pwr_func=pwr_func)
            for v_i in vs]
     return np.array(eps)
 
@@ -711,6 +798,13 @@ def shitty_mi(c, o, v, noisevar, n_i=5):
         term2 = 0
     mi = np.log2(m) + n_e*term1 + term2
     return mi
+
+def distance_given_difference(c, o, v):
+    x = 0
+    for i in range(1, v + 1):
+        y = sm.comb(v, i)*sm.comb(c - v, o - i)
+        x = x + y
+    return np.sqrt(2*x)
 
 def distance_combinations(c, o, k):
     x = 0
