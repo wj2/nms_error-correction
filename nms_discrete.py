@@ -10,6 +10,11 @@ from sklearn import svm
 
 from mixedselectivity_theory.utility import *
 
+def efficacy_tuning(eps_r, nh, pxh, a=10):
+    nlpxl = 1 - nh*pxh
+    out = nh*pxh*np.exp(-(a + eps_r)) + nlpxl*np.exp(-(a - eps_r))
+    return out
+
 def empirical_variance_power(samps):
     return np.sum(np.var(samps, axis=0))
 
@@ -355,6 +360,7 @@ def simulate_transform_code_full(types, trans, noise_var, code_pwr, neurs,
                                   for ns in noise_samps]))
     elif input_noise > 0 and not local_input_noise:
         orig_samps = types[samp_inds]
+        types = np.array(num_types)
         inp_noise = np.random.rand(*orig_samps.shape) < input_noise
         noise_samps = (orig_samps + inp_noise) % 2
         samps_in = trans(noise_samps)
@@ -989,11 +995,18 @@ def hetero_error_nnub(c, o, v, noisevar, n_i, rf, r2=1, excl=True,
     far_e = nn*(1 - prop)*dense_val
     return close_e, far_e, prop, nn
     
-def compute_num_neighbors(c, o, n_i, rf):
+def compute_num_neighbors(c, o, n_i, rf, one_feat=False):
     _, s, trs = generate_cc_types((n_i,)*c, (rf,)*c, order=o, excl=True)
     ind = np.argmin(np.sum(np.abs(s - (n_i/2,)*c), axis=1))
+    if one_feat:
+        fv = s[0, 0]
+        mask = s[:, 0] != fv
+        ind = 0
+        print((n_i-1)*n_i**(c - 1))
+    else:
+        mask = np.ones(len(s))
     cw = trs(s)
-    ds = u.euclidean_distance(cw, cw[ind])
+    ds = u.euclidean_distance(cw[mask], cw[ind])
     ds = ds[ds > 0]
     md = np.min(ds)
     n_neigh = np.sum(ds == md)
@@ -1014,6 +1027,12 @@ def distance_energy_per_unit(c, o, e, n_i, eps, streams=1, excl=False,
     if np.isnan(delta2) or d > e:
         delta2 = -1
     return delta2
+
+def total_energy_modules(c, o, ns, e, m, eps=1):
+    prefact = 2*o/(c*eps)
+    subterm = m*sm.comb(c/m, o)*(ns**o)
+    d = prefact*(e - subterm)
+    return d
 
 def total_energy_order_transitions(c, o, ns):
     first_term = ns*c - (ns + 1)*o

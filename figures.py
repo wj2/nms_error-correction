@@ -5,6 +5,7 @@ import matplotlib as mpl
 from cycler import cycler
 import matplotlib.colors as mpl_c
 import matplotlib.lines as lines
+import matplotlib.patheffects as pe
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
@@ -34,16 +35,16 @@ def setup():
 
 """ figure 2 """
 def rep_energy_errors(c, ords, var, noisevar, n_i, n_samps, pwr_func,
-                      noise_func, **kwargs):
+                      noise_func, excl=True, **kwargs):
     emp_corr = np.zeros((len(ords), len(var), n_samps))
     bound_corr = np.zeros((len(ords), len(var)))
     for i, o in enumerate(ords):
         bound_corr[i] = nmd.error_upper_bound_overpwr(c, o, var, noisevar,
-                                                      n_i, excl=True)
+                                                      n_i, excl=excl)
         out = nmd.estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, 
                                                      var, n_samps=n_samps,
                                                      pwr_func=pwr_func,
-                                                     excl=True,
+                                                     excl=excl,
                                                      noise_func=noise_func,
                                                      **kwargs)
         emp_corr[i] = out
@@ -52,24 +53,31 @@ def rep_energy_errors(c, ords, var, noisevar, n_i, n_samps, pwr_func,
 def plot_rep_energy_ord(emp_corr, bound_corr, ords, var, noisevar, ax,
                         x_ins=(5,6), y_ins=(.0001, .12), xlab='SNR',
                         log_x = False, ylab='error rate (PE)', ylim=(0, 1),
-                        inset=True):
+                        inset=True, plot_bound_main=False, ins_logy=True,
+                        bound_edge_color='k', bound_edge_wid=2):
     if inset:
         ax_i = zoomed_inset_axes(ax, 3.5, loc=7)
         ax_i.set_xlim(x_ins)
         ax_i.set_ylim(y_ins)
     snrs = np.sqrt(var/noisevar)
     for i, o in enumerate(ords):
-        l2 = ax.plot(snrs, bound_corr[i], '--', color=colors[i])
-        col = l2[0].get_color()
-        gpl.plot_trace_werr(snrs, emp_corr[i].T, color=col, 
-                            error_func=gpl.conf95_interval, ax=ax, log_x=log_x,
-                            label='O = {}'.format(o))
+        l = gpl.plot_trace_werr(snrs, emp_corr[i].T, log_x=log_x,
+                                 error_func=gpl.conf95_interval, ax=ax, 
+                                 label='O = {}'.format(o))
+        col = l[0].get_color()
+        lw = l[0].get_linewidth()
+        bound_pe = [pe.Stroke(linewidth=lw + bound_edge_wid,
+                              foreground=bound_edge_color),
+                    pe.Normal()]
+        if plot_bound_main:
+            _ = ax.plot(snrs, bound_corr[i], '--', color=col,
+                        path_effects=bound_pe)
         if inset:
-            ax_i.plot(snrs, bound_corr[i], '--', color=col)
-            gpl.plot_trace_werr(snrs, emp_corr[i].T, color=col, 
+            gpl.plot_trace_werr(snrs, emp_corr[i].T, color=col, log_y=ins_logy,
                                 error_func=gpl.conf95_interval, ax=ax_i,
                                 label='O = {}'.format(o), legend=False)
-        
+            ax_i.plot(snrs, bound_corr[i], '--', color=col,
+                      path_effects=bound_pe)
     ax.set_ylim(ylim)
     ax.set_ylabel(ylab)
     ax.set_xlabel(xlab)
@@ -79,39 +87,82 @@ def plot_rep_energy_ord(emp_corr, bound_corr, ords, var, noisevar, ax,
     ax.legend(frameon=False)
     return ax
 
-def plot_target_error(nc_s, n_i, target_err, pwr_func, ax1, ax2, text_buff=5,
+def plot_err_at_snr(nc_s, n_i, snr, pwr_func, ax1, ax2, text_buff=.07,
+                    excl=True, logy=True, ord_cols=colors):
+    kwargs = {'pwr_func':pwr_func,'excl':excl}
+    if logy:
+        ax1.set_yscale('log')
+        ax2.set_yscale('log')
+    nv = 10
+    var = nv*(snr**2)
+    ax2.set_xlim([min(nc_s) - .75, max(nc_s) + .5])
+    err_ratios = np.zeros(len(nc_s))
+    best_ords = np.zeros(len(nc_s), dtype=int)
+    for i, nc in enumerate(nc_s):
+        os = np.arange(1, nc + 1)
+        errs = [nmd.analytical_error_probability_nnup(nc, o, var, nv, n_i,
+                                                      **kwargs)
+                for o in os]
+        errs_arr = np.array(list(errs))
+        l = gpl.plot_trace_werr(os, errs_arr, label=r'$K = '+r'{}$'.format(nc),
+                                ax=ax1, color=ord_cols[i])
+        err_ratio = np.array(errs_arr[0]/min(errs_arr))
+        err_ratios[i] = err_ratio
+        gpl.plot_trace_werr(np.array(nc), err_ratio, marker='o', 
+                            color=ord_cols[i], ax=ax2)
+        best_ord = os[np.argmin(errs_arr)]
+        best_ords[i] = best_ord
+    yl2 = np.log10(ax2.get_ylim())
+    xl2 = ax2.get_xlim()
+    for i, nc in enumerate(nc_s):
+        err_ratio = err_ratios[i]
+        best_ord = best_ords[i]
+        xtxt = (nc - xl2[0])/(xl2[1] - xl2[0])
+        ytxt = (np.log10(err_ratio) - yl2[0])/(yl2[1] - yl2[0])
+        ax2.text(xtxt, ytxt + text_buff, 'O = {}'.format(best_ord),
+                 color=colors[i], horizontalalignment='center',
+                 transform=ax2.transAxes)
+    ax1.legend(frameon=False)
+    ax1.set_xlabel('order (O)')
+    ax1.set_ylabel('error rate at SNR = {}'.format(snr))
+    ax2.set_ylabel('pure/mixed error ratio')
+    ax2.set_xticks(nc_s)
+    ax2.set_xlabel(r'number of features ($K$)')
+    return ax1, ax2
+
+def plot_target_error(nc_s, n_i, target_err, pwr_func, ax1, ax2, text_buff=15,
                       excl=True, subdim=False, eps=1, logy=False, rf=1,
-                      distortion='hamming'):
+                      distortion='hamming', nv=10):
 
     kwargs = {'subdim':subdim, 'pwr_func':pwr_func, 'eps':eps, 'rf':rf, 
               'distortion':distortion}
     if logy:
         ax1.set_yscale('log')
-
     for i, nc in enumerate(nc_s):
         os = np.arange(1, nc + 1)
         snrs = np.array(list([nmd.pwr_require_err(target_err, nc, o, n_i,
-                                                 **kwargs)[0] 
+                                                  **kwargs)[0] 
                               for o in os]))[:, 0]
-        l = gpl.plot_trace_werr(os, snrs, label=r'$K = '+r'{}$'.format(nc),
+        re = nv*snrs**2
+        l = gpl.plot_trace_werr(os, re, label=r'$K = '+r'{}$'.format(nc),
                                 ax=ax1, color=colors[i])
-        snr_ratio = np.array(snrs[0]/min(snrs)*100)
-        gpl.plot_trace_werr(np.array(nc), snr_ratio, marker='o', 
+        re_ratio = np.array(re[0]/min(re)*100)
+        gpl.plot_trace_werr(np.array(nc), re_ratio, marker='o', 
                             color=colors[i], ax=ax2)
-        best_ord = os[np.argmin(snrs)]
-        ax2.text(nc, snr_ratio + text_buff, 'O = {}'.format(best_ord),
+        best_ord = os[np.argmin(re)]
+        ax2.text(nc, re_ratio + text_buff, 'O = {}'.format(best_ord),
                  color=colors[i], horizontalalignment='center')
     
-        ax1.legend(frameon=False)
-        ax1.set_xlabel('order (O)')
-        te_perc = int(target_err*100)
-        ax1.set_ylabel('SNR that achieves\n{}% error rate'.format(te_perc))
-
-        ax2.set_ylabel('% SNR for pure code\nrelative to best mixed code')
-        ax2.set_yticks([100, 150, 200])
-        ax2.set_xticks(nc_s)
-        ax2.set_xlabel(r'number of features ($K$)')
-        ax2.set_xlim([min(nc_s) - .75, max(nc_s) + .5])
+    ax1.legend(frameon=False)
+    ax1.set_xlabel('order (O)')
+    te_perc = int(target_err*100)
+    ax1.set_ylabel('represenation energy for\n{}% error rate'.format(te_perc))
+    
+    ax2.set_ylabel('% representation energy for pure\nrelative to best mixed code')
+    ax2.set_yticks([100, 250, 400])
+    ax2.set_xticks(nc_s)
+    ax2.set_xlabel(r'number of features ($K$)')
+    ax2.set_xlim([min(nc_s) - .75, max(nc_s) + .5])
 
     return ax1, ax2
     
@@ -176,23 +227,27 @@ def plot_order_map(ds, c, n_is, es, ax, es_tbs=None, n_is_es=None,
     
 def figure2(gen_panels=None, data=None):
     if gen_panels is None:
-        gen_panels = ('a', 'b', 'c', 'd')
+        gen_panels = ('a', 'b', 'c', 'd', 'sab')
     setup()
     # whole fig
-    n_samps = 5000
+    n_samps = 10000
     pwr_func = nmd.empirical_variance_power
     noise_func = nmd.gaussian_noise
     nv = 10
     var = np.linspace(.1, 1000, 300)
     if data is None:
         data = {}
+    else:
+        print('using supplied data, may be incorrect')
     # panel A
     if 'a' in gen_panels:
         c_a = 3
         ords_a = range(1, c_a + 1)
         ni_a = 5
+        insetx_a = (5.5, 6.5)
+        insety_a = (.00005, .1)
         
-        panel_a_size = (3.75, 3)
+        panel_a_size = (4, 2)
         f_a = plt.figure(figsize=panel_a_size)
         ax_a = f_a.add_subplot(1,1,1)
         if 'ec_a' in data.keys():
@@ -200,11 +255,12 @@ def figure2(gen_panels=None, data=None):
             bc_a = data['bc_a']
         else:
             out = rep_energy_errors(c_a, ords_a, var, nv, ni_a, n_samps,
-                                    pwr_func, noise_func)
+                                    pwr_func, noise_func, excl=True)
             ec_a, bc_a = out
             data['ec_a'] = ec_a
             data['bc_a'] = bc_a
-        ax_a = plot_rep_energy_ord(ec_a, bc_a, ords_a, var, nv, ax_a)
+        ax_a = plot_rep_energy_ord(ec_a, bc_a, ords_a, var, nv, ax_a,
+                                   x_ins=insetx_a, y_ins=insety_a)
         fa_name = basefolder + 'e-snr-k{}.pdf'.format(c_a)
         f_a.savefig(fa_name, bbox_inches='tight', transparent=True)
 
@@ -213,6 +269,8 @@ def figure2(gen_panels=None, data=None):
         c_b = 5
         ords_b = range(1, c_b + 1)
         ni_b = 3
+        insetx_b = (6, 7)
+        insety_b = (.00005, .1)
 
         panel_b_size = panel_a_size 
         f_b = plt.figure(figsize=panel_b_size)
@@ -222,11 +280,12 @@ def figure2(gen_panels=None, data=None):
             bc_b = data['bc_b']
         else:
             out = rep_energy_errors(c_b, ords_b, var, nv, ni_b, n_samps,
-                                    pwr_func, noise_func)
+                                    pwr_func, noise_func, excl=True)
             ec_b, bc_b = out
             data['ec_b'] = ec_b
             data['bc_b'] = bc_b
-        ax_b = plot_rep_energy_ord(ec_b, bc_b, ords_b, var, nv, ax_b)
+        ax_b = plot_rep_energy_ord(ec_b, bc_b, ords_b, var, nv, ax_b,
+                                   x_ins=insetx_b, y_ins=insety_b)
         fb_name = basefolder + 'e-snr-k{}.pdf'.format(c_b)
         f_b.savefig(fb_name, bbox_inches='tight', transparent=True)
 
@@ -234,15 +293,16 @@ def figure2(gen_panels=None, data=None):
     if 'c' in gen_panels:
         cs_c = range(2, 7)
         ni_c = 5
-        targ_err = .01
+        snr = 9
         pwr_func_c = nmd.analytical_code_variance
         
-        panel_c_size = (7.5, 3)
+        panel_c_size = (2.5, 4)
         f_c = plt.figure(figsize=panel_c_size)
-        ax1, ax2 = f_c.add_subplot(1, 2, 1), f_c.add_subplot(1, 2, 2)
+        ax1, ax2 = f_c.add_subplot(2, 1, 1), f_c.add_subplot(2, 1, 2)
     
-        ax1, ax2 = plot_target_error(cs_c, ni_c, targ_err, pwr_func_c, ax1, ax2)
-        fc_name = basefolder + 'energy-req_l2.svg'
+        ax1, ax2 = plot_err_at_snr(cs_c, ni_c, snr, pwr_func_c,
+                                   ax1, ax2)
+        fc_name = basefolder + 'error-at-snr_l2.svg'
         f_c.savefig(fc_name, bbox_inches='tight', transparent=True)
 
     # panel D
@@ -287,6 +347,23 @@ def figure2(gen_panels=None, data=None):
         cb = make_order_colorbar(c_d, p_num, f_d, [ax_num, ax_free])
         fd_name = basefolder + 'opt-order-map.svg'
         f_d.savefig(fd_name, bbox_inches='tight', transparent=True)
+
+    # panel supp AB
+    if 'sab' in gen_panels:
+        cs_sab = range(2, 7)
+        ni_sab = 5
+        targ_err = .01
+        pwr_func_sab = nmd.analytical_code_variance
+        
+        panel_sab_size = (6, 2.5)
+        f_sab = plt.figure(figsize=panel_sab_size)
+        ax1, ax2 = f_sab.add_subplot(1, 2, 1), f_sab.add_subplot(1, 2, 2)
+    
+        ax1, ax2 = plot_target_error(cs_sab, ni_sab, targ_err, pwr_func_sab,
+                                     ax1, ax2)
+        fsab_name = basefolder + 'energy-req_l2.svg'
+        f_sab.savefig(fsab_name, bbox_inches='tight', transparent=True)
+
     return data
 
 def rep_energy_errors_dfunc_rf(c, ni, nv, var, n_samps, cc_rfs,
@@ -308,15 +385,31 @@ def plot_rep_energy_ord_rf(corr, ords, rfs, var, noisevar, ax,
                            xlab='total energy (E)', ylab='error rate (PE)',
                            l_styles=None, ord_cols=colors, legend=True,
                            stylecol=(.2, .2, .2), vline_pt=None, vert_alpha=.3,
-                           error_func=gpl.sem, logy=False, logx=False):
+                           error_func=gpl.sem, logy=False, logx=False,
+                           inset=False, x_ins=(1.5*10**4, 2.5*10**4),
+                           y_ins=(.005, 5), logy_ins=True, logx_ins=False):
     if l_styles is None:
         l_styles = ('solid', 'dashed', 'dotted', 'dashdot')
+    if inset:
+        ax_i = zoomed_inset_axes(ax, 2.5, loc=1)
+        ax_i.set_xlim(x_ins)
+        ax_i.set_ylim(y_ins)
+
     for i, o in enumerate(ords):
         for j, rf in enumerate(rfs):
             l = gpl.plot_trace_werr(var, corr[j, i].T, error_func=error_func,
                                     ax=ax, linestyle=l_styles[j],
                                     color=ord_cols[i], log_y=logy, log_x=logx,
                                     legend=False)
+            if inset:
+                gpl.plot_trace_werr(var, corr[j, i].T, error_func=error_func,
+                                    ax=ax_i, linestyle=l_styles[j],
+                                    color=ord_cols[i], log_y=logy_ins,
+                                    log_x=logx_ins,
+                                    legend=False)
+    if inset:
+        ax_i.set_xticks(x_ins)
+        mark_inset(ax, ax_i, loc1=2, loc2=4, fc="none", ec="0.5")
     if vline_pt is not None:
         yax_low, yax_high = ax.get_ylim()
         ax.vlines([vline_pt], yax_low, yax_high, linestyle='dashed',
@@ -391,7 +484,7 @@ def figure3(gen_panels=None, data=None):
 
     var = (snrs**2)*nv*eps + ni**c
 
-    n_samps = 5000
+    n_samps = 10000
     bs = False
     subdim = True
     dfuncs = [u2.hamming_distortion, u2.mse_distortion]
@@ -418,15 +511,20 @@ def figure3(gen_panels=None, data=None):
         panel_bc_size = (7, 2.5)
         logy_bc = False
         logx_bc = True
+        ins_b = False
+        ins_c = True
+        
         f_bc = plt.figure(figsize=panel_bc_size)
         ax_ham = f_bc.add_subplot(1, 2, 1)
         ax_mse = f_bc.add_subplot(1, 2, 2)
         plot_rep_energy_ord_rf(corr[ham_ind], ords, masked_rfs, var, nv, ax_ham,
                                vline_pt=use_pt, l_styles=l_styles, logy=logy_bc,
-                               logx=logx_bc, legend=False)
+                               logx=logx_bc, legend=False, inset=ins_b)
         plot_rep_energy_ord_rf(corr[mse_ind], ords, masked_rfs, var, nv, ax_mse,
                                vline_pt=use_pt, ylab='MSE', l_styles=l_styles,
-                               logy=logy_bc, logx=logx_bc)
+                               logy=logy_bc, logx=logx_bc, inset=ins_c)
+        fbc_name = basefolder + 'rf-snr.pdf'
+        f_bc.savefig(fbc_name, bbox_inches='tight', transparent=True)
 
     # panel D
     if 'd' in gen_panels:
@@ -438,14 +536,23 @@ def figure3(gen_panels=None, data=None):
                     xlab='')
         plot_rf_err(corr[mse_ind, :, :, use_ind], ords, cc_rfs, ax_rf_mse,
                     ylab='MSE')
+        fd_name = basefolder + 'rf-ham-mse.svg'
+        f_d.savefig(fd_name, bbox_inches='tight', transparent=True)
+
 
     # panel E
     if 'e' in gen_panels:
-        panel_e_size = (7, 2.5)
+        panel_e_size = (6, 2.5)
         yticks_e = [0, .5, 1]
+        logx = False
         f_e = plt.figure(figsize=panel_e_size)
         f_e, axs_distr = plt.subplots(1, len(ords), sharex=True, sharey=True,
                                       figsize=panel_e_size)
         plot_cumu_errors(corr[mse_ind, :, :, use_ind], ords, masked_rfs,
-                         axs_distr, l_styles=l_styles, yticks=yticks_e)
+                         axs_distr, l_styles=l_styles, yticks=yticks_e,
+                         logx=logx)
+        f_e.tight_layout()
+        fe_name = basefolder + 'rf-cumu.svg'
+        f_e.savefig(fe_name, bbox_inches='tight', transparent=True)
+
     return data
