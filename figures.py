@@ -416,13 +416,13 @@ def figure1(gen_panels=None):
 """ figure 2 """
 def rep_energy_errors(c, ords, var, noisevar, n_i, n_samps, pwr_func,
                       noise_func, excl=True, correction=False, only_ana=False,
-                      **kwargs):
-    print('generating Figure 2')
+                      full_series=False, **kwargs):
     emp_corr = np.zeros((len(ords), len(var), n_samps))
     bound_corr = np.zeros((len(ords), len(var)))
     for i, o in enumerate(ords):
         bound_corr[i] = nmd.error_upper_bound_overpwr(c, o, var, noisevar,
                                                       n_i, excl=excl,
+                                                      full_series=full_series,
                                                       correction=correction)
         if not only_ana:
             out = nmd.estimate_real_perc_correct_overpwr(c, o, n_i, noisevar, 
@@ -477,7 +477,7 @@ def plot_rep_energy_ord(emp_corr, bound_corr, ords, var, noisevar, ax,
 
 def plot_err_at_snr(nc_s, n_i, snr, pwr_func, ax1, ax2, text_buff=.07,
                     excl=True, logy=True, ord_cols=colors, correction=False,
-                    label_pts=True):
+                    label_pts=True, full_series=False):
     kwargs = {'pwr_func':pwr_func,'excl':excl}
     if logy:
         ax1.set_yscale('log')
@@ -491,6 +491,7 @@ def plot_err_at_snr(nc_s, n_i, snr, pwr_func, ax1, ax2, text_buff=.07,
         os = np.arange(1, nc + 1)
         errs = [nmd.analytical_error_probability_nnup(nc, o, var, nv, n_i,
                                                       correction=correction,
+                                                      full_series=full_series,
                                                       **kwargs)
                 for o in os]
         errs_arr = np.array(list(errs))
@@ -523,7 +524,8 @@ def plot_err_at_snr(nc_s, n_i, snr, pwr_func, ax1, ax2, text_buff=.07,
 
 def plot_target_error(nc_s, n_i, target_err, pwr_func, ax1, ax2, text_buff=15,
                       excl=True, subdim=False, eps=1, logy=False, rf=1,
-                      distortion='hamming', nv=10, correction=False):
+                      distortion='hamming', nv=10, correction=False,
+                      full_series=False):
 
     kwargs = {'subdim':subdim, 'pwr_func':pwr_func, 'eps':eps, 'rf':rf, 
               'distortion':distortion}
@@ -533,6 +535,7 @@ def plot_target_error(nc_s, n_i, target_err, pwr_func, ax1, ax2, text_buff=15,
         os = np.arange(1, nc + 1)
         snrs = np.array(list([nmd.pwr_require_err(target_err, nc, o, n_i,
                                                   correction=correction,
+                                                  full_series=full_series,
                                                   **kwargs)[0] 
                               for o in os]))[:, 0]
         re = nv*snrs**2
@@ -623,6 +626,7 @@ def plot_order_map(ds, c, n_is, es, ax, es_tbs=None, n_is_es=None,
 def figure2(gen_panels=None, data=None, redo_ana=False):
     if gen_panels is None:
         gen_panels = ('a', 'b', 'c', 'd', 'sab')
+    print('generating Figure 2')
     setup()
     # whole fig
     n_samps = 10000
@@ -631,6 +635,7 @@ def figure2(gen_panels=None, data=None, redo_ana=False):
     nv = 10
     var = np.linspace(.1, 1000, 300)
     correction = True
+    full_series = True
     if data is None:
         data = {}
     else:
@@ -652,14 +657,16 @@ def figure2(gen_panels=None, data=None, redo_ana=False):
         elif 'ec_a' in data.keys() and redo_ana:
             out = rep_energy_errors(c_a, ords_a, var, nv, ni_a, n_samps,
                                     pwr_func, noise_func, excl=True,
-                                    correction=correction, only_ana=True)
+                                    correction=correction, only_ana=True,
+                                    full_series=full_series)
             _, bc_a = out
             data['bc_a'] = bc_a
             ec_a = data['ec_a']
         else:
             out = rep_energy_errors(c_a, ords_a, var, nv, ni_a, n_samps,
                                     pwr_func, noise_func, excl=True,
-                                    correction=correction)
+                                    correction=correction,
+                                    full_series=full_series)
             ec_a, bc_a = out
             data['ec_a'] = ec_a
             data['bc_a'] = bc_a
@@ -687,14 +694,16 @@ def figure2(gen_panels=None, data=None, redo_ana=False):
         elif 'ec_b' in data.keys() and redo_ana:
             out = rep_energy_errors(c_b, ords_b, var, nv, ni_b, n_samps,
                                     pwr_func, noise_func, excl=True,
-                                    correction=correction, only_ana=True)
+                                    correction=correction, only_ana=True,
+                                    full_series=full_series)
             _, bc_b = out
             data['bc_b'] = bc_b
             ec_b = data['ec_b']
         else:
             out = rep_energy_errors(c_b, ords_b, var, nv, ni_b, n_samps,
                                     pwr_func, noise_func, excl=True,
-                                    correction=correction)
+                                    correction=correction,
+                                    full_series=full_series)
             ec_b, bc_b = out
             data['ec_b'] = ec_b
             data['bc_b'] = bc_b
@@ -717,7 +726,8 @@ def figure2(gen_panels=None, data=None, redo_ana=False):
     
         ax1, ax2 = plot_err_at_snr(cs_c, ni_c, snr, pwr_func_c,
                                    ax1, ax2, correction=correction,
-                                   label_pts=False)
+                                   label_pts=False,
+                                   full_series=full_series)
         fc_name = basefolder + 'error-at-snr_l2.svg'
         f_c.savefig(fc_name, bbox_inches='tight', transparent=True)
 
@@ -777,7 +787,8 @@ def figure2(gen_panels=None, data=None, redo_ana=False):
         ax1, ax2 = f_sab.add_subplot(1, 2, 1), f_sab.add_subplot(1, 2, 2)
     
         ax1, ax2 = plot_target_error(cs_sab, ni_sab, targ_err, pwr_func_sab,
-                                     ax1, ax2, correction=correction)
+                                     ax1, ax2, correction=correction,
+                                     full_series=full_series)
         fsab_name = basefolder + 'energy-req_l2.svg'
         f_sab.savefig(fsab_name, bbox_inches='tight', transparent=True)
 

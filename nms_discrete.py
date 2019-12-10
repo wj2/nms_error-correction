@@ -38,6 +38,8 @@ def l1r_filt_scale(cp, p):
 
 empirical_l1r_power = {'pwr':empirical_l1r_power_func,
                        'scale':l1r_filt_scale}
+analytical_l1r_power = {'pwr':empirical_l1r_power_func,
+                        'scale':l1r_filt_scale}
 
 empirical_variance_power = {'pwr':empirical_variance_power_func,
                             'scale':l2_filt_scale}
@@ -503,8 +505,8 @@ def analytical_code_variance_l1(o, c, n, rf=1, excl=False):
     l1_pwr = np.sqrt(pwr)
     return l1_pwr
 
-def analytical_code_l1r(o, c, n, rf=1, excl=False):
-    pwr = analytical_code_variance(o, c, n, rf=rf, excl=excl)
+def analytical_code_l1r(o, c, n_i, rf=1, excl=False):
+    pwr = code_radius(c, o, rf=rf, excl=excl)**2
     return pwr
 
 def analytical_code_variance_cc(o, c, n, sig_rf, excl=False):
@@ -600,26 +602,41 @@ def _ident_close_words(c, o, n_i, rf, cent=True):
 
 def analytical_error_probability_nnup(c, o, v, noisevar, n_i=5, excl=False,
                                       bound_at_one=True, correction=False,
-                                      pwr_func=analytical_code_variance):
-    n_e = _close_words(c, o, n_i=n_i, excl=excl)
-    arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
-                            pwr_func=pwr_func)
-    dense_val = sts.norm(0, 1).cdf(arg)
-    p_e = n_e*(1 - dense_val)
-    if correction: 
-        n_other = n_i**c - n_e - 1
-        arg_other = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
-                                      pwr_func=pwr_func, dist_diff=c)
-        dv_other = sts.norm(0, 1).cdf(arg_other)
-        pe_other = n_other*(1 - dv_other)
-        p_e = p_e + pe_other
+                                      pwr_func=analytical_code_variance,
+                                      full_series=False,
+                                      scale_func=l2_filt_scale):
+    if full_series:
+        p_e = 0
+        for delt in range(1, c + 1):
+            n_e = num_neighbors_difference(c, n_i, delt)
+            arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
+                                    pwr_func=pwr_func, dist_diff=delt,
+                                    scale_func=scale_func)
+            dense_val = sts.norm(0, 1).cdf(arg)
+            p_e_i = n_e*(1 - dense_val)
+            p_e = p_e + p_e_i
+    else:
+        n_e = _close_words(c, o, n_i=n_i, excl=excl)
+        arg = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
+                                pwr_func=pwr_func, scale_func=scale_func)
+        dense_val = sts.norm(0, 1).cdf(arg)
+        p_e = n_e*(1 - dense_val)
+        if correction: 
+            n_other = n_i**c - n_e - 1
+            arg_other = _nnup_density_arg(c, o, v, noisevar, n_i, excl=excl,
+                                          pwr_func=pwr_func, dist_diff=c,
+                                          scale_func=scale_func)
+            dv_other = sts.norm(0, 1).cdf(arg_other)
+            pe_other = n_other*(1 - dv_other)
+            p_e = p_e + pe_other
     if bound_at_one:
         p_e = min(1, p_e)
     return p_e
 
-def ratio_l1(c, o, n_i=5, excl=True, rf=1):
+def ratio_l1(c, o, excl=True):
+    n_i = None
     cd = analytical_code_distance(o, c, excl=excl)
-    cp = analytical_code_l1r(o, c, n_i, rf=rf, excl=excl)
+    cp = analytical_code_l1r(o, c, n_i, excl=excl)
     return cd/cp
 
 def sparsity_l1(c, o, n_i=5, excl=True, rf=1):
@@ -629,12 +646,12 @@ def sparsity_l1(c, o, n_i=5, excl=True, rf=1):
 
 def _nnup_density_arg(c, o, v, noisevar, n_i=5, rf=1, excl=False,
                       subdim=False, eps=10, pwr_func=analytical_code_variance,
-                      dist_diff=1):
+                      dist_diff=1, scale_func=l2_filt_scale):
     pwr = pwr_func(o, c, n_i, rf=rf, excl=excl)
     if subdim:
         ds = analytical_code_terms(o, c, n_i, rf, excl=excl)
         v = (v - ds)/eps
-    trans_term = np.sqrt(v/pwr)
+    trans_term = scale_func(v, pwr)
     if dist_diff == 1:
         delt = analytical_code_distance(o, c, excl=excl)
     else:
@@ -685,11 +702,11 @@ def probe_orders_analytical(c, n, mults, excl=False):
                                                         excl=excl)
     return ps, delts, terms, os 
 
-def code_radius(c, o, l=1, excl=False):
+def code_radius(c, o, rf=1, l=1, excl=False):
     if excl:
-        rad = l*np.sqrt(sm.comb(c, o))
+        rad = l*np.sqrt(sm.comb(c, o)*rf)
     else:
-        rad = l*np.sqrt(np.sum([sm.comb(c, o_i) for o_i in range(1, o + 1)]))
+        rad = l*np.sqrt(np.sum([sm.comb(c, o_i)*rf for o_i in range(1, o + 1)]))
     return rad
 
 def shannon_power(c, o, n_i=5, l=1, block_ratio=1):
@@ -768,22 +785,28 @@ def capacity_block_trans_overpwr(c, o, vs, noisevar, n_i=5, block=None):
 
 def error_upper_bound_overpwr(c, o, vs, noisevar, n_i=5, excl=False,
                               pwr_func=analytical_code_variance,
-                              correction=False):
+                              correction=False, full_series=False,
+                              scale_func=l2_filt_scale):
     eps = [analytical_error_probability_nnup(c, o, v_i, noisevar, n_i,
                                              excl=excl, pwr_func=pwr_func,
-                                             correction=correction)
+                                             correction=correction,
+                                             full_series=full_series,
+                                             scale_func=scale_func)
            for v_i in vs]
     return np.array(eps)
 
 def pwr_require_err(target_pe, c, o, n_i, eps=1, rf=1, subdim=False,
                     noisevar=1, excl=True, distortion='hamming',
                     lg=10**(5), pwr_func=analytical_code_variance,
-                    correction=False):
+                    correction=False, full_series=False,
+                    scale_func=l2_filt_scale):
     def func(v):
         err = perr_per_energy(c, o, n_i, v, eps, rf, noisevar,
                               distortion=distortion, excl=excl,
                               subdim=subdim, bound_at_one=False,
-                              pwr_func=pwr_func, correction=correction)
+                              pwr_func=pwr_func, correction=correction,
+                              full_series=full_series,
+                              scale_func=scale_func)
         return np.abs(err - target_pe)
     if subdim:
         e_bound = analytical_code_terms_cc(o, c, n_i, rf, excl=excl)
@@ -840,27 +863,16 @@ def shannon_lambda(c, n_i, blocklen):
     lam = np.sin(mult1*expon)
     return lam 
     
-def shitty_mi(c, o, v, noisevar, n_i=5):
-    m = n_i**c
-    n_e = c*(n_i - 1)
-    arg = _nnup_density_arg(c, o, v, noisevar, n_i)
-    q = (1 - sts.norm(0, 1).cdf(arg))
-    pe = n_e*q
-    term1 = q*np.log2(q)
-    if np.isnan(term1):
-        term1 = 0
-    term2 = (1 - pe)*np.log2(1 - pe)
-    if np.isnan(term2):
-        term2 = 0
-    mi = np.log2(m) + n_e*term1 + term2
-    return mi
-
 def distance_given_difference(c, o, v):
     x = 0
     for i in range(1, v + 1):
         y = sm.comb(v, i)*sm.comb(c - v, o - i)
         x = x + y
     return np.sqrt(2*x)
+
+def num_neighbors_difference(c, n, v):
+    m = sm.comb(c, v)*(n - 1)**v
+    return m
 
 def distance_combinations(c, o, k):
     x = 0
@@ -898,7 +910,8 @@ def power_modulation_beta(n_mult, c, o, n_i):
 
 def perr_per_energy(c, o, n_i, e, eps, sig, nv=10, excl=True, subdim=True,
                     distortion='mse', bound_at_one=True,
-                    pwr_func=analytical_code_variance, correction=False):
+                    pwr_func=analytical_code_variance, correction=False,
+                    full_series=False, scale_func=l2_filt_scale):
     if subdim:
         dims = analytical_code_terms_cc(o, c, n_i, sig, excl=excl)
         v = (1/eps)*(e - dims)
@@ -909,7 +922,9 @@ def perr_per_energy(c, o, n_i, e, eps, sig, nv=10, excl=True, subdim=True,
                                              bound_at_one=bound_at_one,
                                              distortion=distortion,
                                              pwr_func=pwr_func,
-                                             correction=correction)   
+                                             full_series=full_series,
+                                             correction=correction,
+                                             scale_func=scale_func)   
     else:
         est_err = np.inf
     return est_err
@@ -1020,11 +1035,12 @@ def get_sse(c, o, n_i, rf=1):
 
 def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, bound_at_one=True,
                                distortion='mse', correction=False,
-                               pwr_func=analytical_code_variance):
+                               pwr_func=analytical_code_variance,
+                               full_series=False, scale_func=l2_filt_scale):
     excl = True
     if distortion == 'mse':
         arg = _nnup_density_arg(c, o, v, noisevar, n_i, rf=rf, excl=excl,
-                                pwr_func=pwr_func)
+                                pwr_func=pwr_func, scale_func=scale_func)
         dense_val = 1 - sts.norm(0, 1).cdf(arg)
         num_neigh = _close_words(c, o, n_i, excl=excl, rf=rf)
         mse_tot = get_sse(c, o, n_i, rf=rf)
@@ -1034,7 +1050,9 @@ def hetero_error_full_ana_nnub(c, o, v, noisevar, n_i, rf, bound_at_one=True,
                                                   excl=excl,
                                                   bound_at_one=bound_at_one,
                                                   pwr_func=pwr_func,
-                                                  correction=correction)
+                                                  correction=correction,
+                                                  full_series=full_series,
+                                                  scale_func=scale_func)
     else:
         raise Exception('distortion is not one of "mse", "hamming" or blank')
     return est_e    
