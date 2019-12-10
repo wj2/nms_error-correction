@@ -17,3 +17,6 @@ out in the same folder. Further dependencies include:
 All are available via pip. One of the supplemental figures relies on computation
 of the rate-distortion bound via the Blahut-Arimoto algorithm, implemented in
 python [here](https://github.com/alonkipnis/BlahutArimoto).
+
+With any questions on how to navigate this code or about the manuscript, please
+feel free to contact [me](wj2.github.io). 
