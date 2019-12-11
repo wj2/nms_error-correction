@@ -19,7 +19,7 @@ This code underlies all of the figures in Johnston, Palmer, Freedman
 (2019) https://doi.org/10.1101/577288. To generate
 the main text figures, run:
 ```
-python mixedselectivity_theory.figures_script.py
+python mixedselectivity_theory/figures_script.py
 ```
 One of the supplemental figures relies on computation
 of the rate-distortion bound via the Blahut-Arimoto algorithm, implemented in
