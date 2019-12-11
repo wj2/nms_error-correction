@@ -23,7 +23,7 @@ import general.plotting_styles as gps
 import general.utility as u
 import general.neural_analysis as na
 
-basefolder = ('/Users/wjj/Dropbox/research/uc/freedman/analysis/'
+bf = ('/Users/wjj/Dropbox/research/uc/freedman/analysis/'
               'mixedselectivity_theory/figs/')
 
 colors = np.array([(127,205,187),
@@ -360,7 +360,7 @@ def ratio_plots(ps, delts, terms, orders, fsize):
     f.tight_layout()
     return f
 
-def figure1(gen_panels=None):
+def figure1(basefolder=bf, gen_panels=None):
     print('generating Figure 1')
     print('Note: panels A and C were made in latex/inkscape and will not be '
           +'generated')
@@ -623,7 +623,7 @@ def plot_order_map(ds, c, n_is, es, ax, es_tbs=None, n_is_es=None,
     ax.set_ylim((n_is[0], n_is[-1]))
     return ax, p
     
-def figure2(gen_panels=None, data=None, redo_ana=False):
+def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
     if gen_panels is None:
         gen_panels = ('a', 'b', 'c', 'd', 'sab')
     print('generating Figure 2')
@@ -892,7 +892,7 @@ def plot_cumu_errors(corr, ords, rfs, axs, ord_cols=colors, l_styles=None,
             ax_i.set_yticks(yticks)
     return axs
 
-def figure3(gen_panels=None, data=None):
+def figure3(basefolder=bf, gen_panels=None, data=None):
     print('generating Figure 3')
     print('Note: panel A was made in latex/inkscape and will not be generated')
     if gen_panels is None:
@@ -1117,7 +1117,7 @@ def fit_saccdmc_glms(paths, n_perms=5000, window_size=150, window_center=95,
     cos, pcos, _ = out
     return cos, pcos
 
-def figure4(gen_panels=None, data=None, data_paths=None):
+def figure4(basefolder=bf, gen_panels=None, data=None, data_paths=None):
     print('generating Figure 4')
     print('Note: panels C and D rely on previously published data, available '
           +'by contacting the original authors of Rishel, Huang, Freedman '

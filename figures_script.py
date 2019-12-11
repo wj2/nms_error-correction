@@ -2,9 +2,11 @@
 import mixedselectivity_theory.figures as nmf
 
 if __name__ == '__main__':
-    nmf.figure1()
-    nmf.figure2()
-    nmf.figure3()
+    basefolder = './' # this is where the figure files will be saved
+    
+    nmf.figure1(basefolder=basefolder)
+    nmf.figure2(basefolder=basefolder)
+    nmf.figure3(basefolder=basefolder)
 
     # datapath_maceo = 'lip_saccdmc/dmc/lip/maceo/'
     # datapath_jb = 'lip_saccdmc/dmc/lip/jb/'
@@ -16,4 +18,4 @@ if __name__ == '__main__':
         dps.append(datapath_jb)
     if len(dps) == 0:
         dps = None
-    nmf.figure4(data_paths=dps)
+    nmf.figure4(basefolder=basefolder, data_paths=dps)
