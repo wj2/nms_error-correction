@@ -641,6 +641,7 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
     else:
         print('using supplied data, may be incorrect')
     # panel A
+    panel_a_size = (1.75, 1)
     if 'a' in gen_panels:
         c_a = 3
         ords_a = range(1, c_a + 1)
@@ -648,7 +649,6 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         insetx_a = (5.5, 6.5)
         insety_a = (.00005, .1)
         snr_start_a = 2
-        panel_a_size = (1.75, 1)
         f_a = plt.figure(figsize=panel_a_size)
         ax_a = f_a.add_subplot(1,1,1)
         if 'ec_a' in data.keys() and not redo_ana:
@@ -677,6 +677,7 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         f_a.savefig(fa_name, bbox_inches='tight', transparent=True)
 
     # panel B
+    panel_b_size = panel_a_size 
     if 'b' in gen_panels:
         c_b = 5
         ords_b = range(1, c_b + 1)
@@ -685,7 +686,6 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         insety_b = (.00005, .1)
         snr_start_b = 2
         
-        panel_b_size = panel_a_size 
         f_b = plt.figure(figsize=panel_b_size)
         ax_b = f_b.add_subplot(1,1,1)
         if 'ec_b' in data.keys() and not redo_ana:
@@ -714,13 +714,13 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         f_b.savefig(fb_name, bbox_inches='tight', transparent=True)
 
     # panel C
+    panel_c_size = (1.5, panel_a_size[1]*2)
     if 'c' in gen_panels:
         cs_c = range(2, 7)
         ni_c = 5
         snr = 9
         pwr_func_c = nmd.analytical_code_variance
         
-        panel_c_size = (1.5, panel_a_size[1]*2)
         f_c = plt.figure(figsize=panel_c_size)
         ax1, ax2 = f_c.add_subplot(2, 1, 1), f_c.add_subplot(2, 1, 2)
     
@@ -732,8 +732,9 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         f_c.savefig(fc_name, bbox_inches='tight', transparent=True)
 
     # panel D
+    panel_d_size = (2.5*panel_c_size[0], 1.25*panel_a_size[1])
     if 'd' in gen_panels:
-        eps = 200
+        eps = 100
         c_d = 6
 
         ni_d_beg = 0
@@ -756,7 +757,6 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
                                             dim_cost=True)
             data['ds_free'] = ds_free
             data['ds_ener'] = ds_ener
-        panel_d_size = (2.5*panel_c_size[0], 1.25*panel_a_size[1])
         
         f_d = plt.figure(figsize=panel_d_size)
         ax_free = f_d.add_subplot(1,2,1)
@@ -776,13 +776,13 @@ def figure2(basefolder=bf, gen_panels=None, data=None, redo_ana=False):
         f_d.savefig(fd_name, bbox_inches='tight', transparent=True, dpi=600)
 
     # panel supp AB
+    panel_sab_size = (3.2, 1.4)
     if 'sab' in gen_panels:
         cs_sab = range(2, 7)
         ni_sab = 5
         targ_err = .001
         pwr_func_sab = nmd.analytical_code_variance
         
-        panel_sab_size = (3.2, 1.4)
         f_sab = plt.figure(figsize=panel_sab_size)
         ax1, ax2 = f_sab.add_subplot(1, 2, 1), f_sab.add_subplot(1, 2, 2)
     
@@ -1156,7 +1156,7 @@ def figure4(basefolder=bf, gen_panels=None, data=None, data_paths=None):
     groups = (ps_group, nms_group)
     group_xlabels = ('O = 1', 'O = 2')
     ylabel_heat = 'neuron number'
-    ylabel_prop = '% selective'
+    ylabel_prop = 'proportion\nselective'
     ylabel_mag = 'strength\n(|z-score|)'
     cb_label = 'z-score'
     label_rotation = 'vertical'
