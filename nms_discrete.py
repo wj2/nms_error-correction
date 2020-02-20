@@ -84,26 +84,35 @@ def compute_cov(data, demean=True):
         for row in data.T:
             out_mat = np.outer(row, row)
             cov_mat = cov_mat + np.outer(row, row)
-        print(cov_mat[0])
-        print(cov_mat[1])
         cov_mat = cov_mat / (data.shape[1] - 1)
     return cov_mat
-    
-def code_effective_dimension(k, o, n, rf_sizes=None):
+
+def code_effective_dimension(k, o, n, excl=True, rf_sizes=None,
+                             return_proj=False):
     if rf_sizes is None:
-        _, bt, trs, _ = generate_types((n,)*k, order=o, excl=True)
-        pop_size = analytical_code_terms(o, k, n, excl=True)
+        _, bt, trs, _ = generate_types((n,)*k, order=o, excl=excl)
+        pop_size = analytical_code_terms(o, k, n, excl=excl)
     else:
-        _, bt, trs = generate_cc_types((n,)*k, rf_sizes, order=o, excl=True)
-        pop_size = analytical_code_terms_cc(o, k, n, rf_sizes[0], excl=True)
+        _, bt, trs = generate_cc_types((n,)*k, rf_sizes, order=o, excl=excl)
+        pop_size = analytical_code_terms_cc(o, k, n, rf_sizes[0], excl=excl)
     resps = trs(bt)
     cov_mat = compute_cov(resps.T, demean=False)
     nd_mask = ~np.eye(cov_mat.shape[0], dtype=bool)
     nondiag = cov_mat[nd_mask]
     cij_emp = np.mean(nondiag**2)
-    evs, _ = np.linalg.eig(cov_mat)
+    evs, evecs = np.linalg.eig(cov_mat)
+    print(evs[evs > 1e-10], sum(evs > 1e-10))
     dim = (np.sum(evs)**2)/np.sum(evs**2)
-    return dim.real, pop_size, cij_emp
+    if return_proj:
+        print(evs)
+        print(evecs[:, evs > 0])
+        length_evecs = evs[evs > 0]*evecs[:, evs > 0]
+        print(length_evecs)
+        proj_stim = np.dot(length_evecs.T, resps.T) 
+        out = (dim.real, pop_size, cij_emp, proj_stim)
+    else:
+        out = dim.real, pop_size, cij_emp
+    return out
 
 def generate_types(option_list, order=None, pure=False, excl=False):
     types = list(it.product(*[range(x) for x in option_list]))
