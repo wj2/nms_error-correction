@@ -14,7 +14,7 @@ tfpl = tfp.layers
 tfd = tfp.distributions
 
 def awgn_capacity(snr):
-    return .5*np.log(1 + snr)
+    return .5*np.log2(1 + snr)
 
 def calculate_min_partitionlen(num_partitions, snr, rate=None, snr_thr=15.8):
     a = calculate_a(snr, rate=rate, snr_thr=snr_thr)
@@ -24,18 +24,18 @@ def calculate_min_partitionlen(num_partitions, snr, rate=None, snr_thr=15.8):
 def calculate_a(snr, rate=None, snr_thr=15.8):
     if np.all(snr < snr_thr):
         if rate is not None:
-            denom = ((1 + snr)*np.log(1 + snr) - snr*np.log(np.e))**2
-            num = rate*8*snr*(1 + snr)*np.log(np.e)
+            denom = ((1 + snr)*np.log2(1 + snr) - snr*np.log2(np.e))**2
+            num = rate*8*snr*(1 + snr)*np.log2(np.e)
         else:
-            num = 4*snr*(1 + snr)*np.log(1 + snr)
-            denom = ((1 + snr)*np.log(1 + snr) - snr)**2
+            num = 4*snr*(1 + snr)*np.log2(1 + snr)
+            denom = ((1 + snr)*np.log2(1 + snr) - snr)**2
     else:
         if rate is not None:
-            denom = (1 + snr)*np.log(1 + snr) - 2*snr*np.log(np.e)
+            denom = (1 + snr)*np.log2(1 + snr) - 2*snr*np.log2(np.e)
             num = rate*2*(1 + snr)
         else:
-            num = (1 + snr)*np.log(1 + snr)
-            denom = (1 + snr)*np.log(1 + snr) - 2*snr
+            num = (1 + snr)*np.log2(1 + snr)
+            denom = (1 + snr)*np.log2(1 + snr) - 2*snr
     return num/denom
 
 def calculate_avl(l, snr, rate=None, rate_percent=.90):
@@ -43,7 +43,7 @@ def calculate_avl(l, snr, rate=None, rate_percent=.90):
         rate = awgn_capacity(snr)*rate_percent
     alpha = np.arange(1, l)/l
     dav = d1_alpha_snr(alpha, snr)
-    avl = rate*np.log(ss.comb(l, alpha*l))/(dav*l*np.log(l))
+    avl = rate*np.log2(ss.comb(l, alpha*l))/(dav*l*np.log2(l))
     a = np.max(avl)
     return a
 
@@ -61,7 +61,7 @@ def d1_alpha_snr(alpha, snr):
     return das
 
 def d1(delt, omp, eps=0):
-    f = lambda l: l*delt + .5*np.log(1 - (l**2)*omp)
+    f = lambda l: l*delt + .5*np.log2(1 - (l**2)*omp)
     f_opt = lambda l: -np.sum(f(l))
     l_guess = np.ones_like(delt)*.5
     bounds = ((eps, 1 - eps),)*len(l_guess)
@@ -117,13 +117,26 @@ class OLSDecoder(SCDecoder):
 
 class IterativeDecoder(SCDecoder):
 
-    def __init__(self, code, first_only=False, tau=.1):
+    def __init__(self, code, first_only=False, tau=None):
         self.x = code.x_mat
         self.tau = tau
         self.l = code.num_partitions
         self.m = code.partition_len
+        if tau is None:
+            a = self._compute_a(code)
+            self.tau = np.sqrt(2*np.log(self.m)) + a
         self.first_only = first_only
 
+    def _compute_a(self, code):
+        num = (3/2)*np.log(np.log(code.partition_len))
+        denom = np.sqrt(2*np.log(code.partition_len))
+        print('snr', np.log(code.snr*(1 + 1/code.capacity)/(np.pi**(1/4))))
+        a_bar_num = 2*np.log(code.snr*(1 + 1/code.capacity)/(np.pi**(1/4)))
+        print(num, a_bar_num)
+        print(num/denom, a_bar_num/denom)
+        a = num/denom + a_bar_num/denom
+        return a
+        
     def _decoder(self, y):
         k = 0
         dec_k = set()
@@ -188,16 +201,16 @@ class SuperpositionCode(object):
 
     def __init__(self, snr, partition_len, num_partitions, rate_percent,
                  set_n=None, noise_var=5, lazy_codewords=True):
-        self.capacity = .5*np.log(1 + snr)
+        self.capacity = .5*np.log2(1 + snr)
         set_rate = self.capacity*rate_percent
         if set_n is not None:
             self.little_n = set_n
-            num_partitions = int(round(set_n*set_rate/np.log(set_n)))
+            num_partitions = int(round(set_n*set_rate/np.log2(set_n)))
             partition_len = set_n
         else:
-            approx_n = np.log(partition_len)*num_partitions/set_rate
+            approx_n = np.log2(partition_len)*num_partitions/set_rate
             self.little_n = int(np.ceil(approx_n))
-        self.rate = num_partitions*np.log(partition_len)/self.little_n
+        self.rate = num_partitions*np.log2(partition_len)/self.little_n
         self.noise_var = noise_var
         self.snr = snr
         self.num_partitions = num_partitions
@@ -285,9 +298,9 @@ class SuperpositionCode(object):
         
 def sp_upperbound(snr, num_p, part_len, rate_percent=.9):
     approx_rate = awgn_capacity(snr)*rate_percent
-    approx_n = np.log(part_len)*num_p/approx_rate
+    approx_n = np.log2(part_len)*num_p/approx_rate
     little_n = int(np.ceil(approx_n))
-    rate = num_p*np.log(part_len)/little_n
+    rate = num_p*np.log2(part_len)/little_n
     alpha = np.arange(1, num_p)/num_p
     delt_alph = awgn_capacity(alpha*snr) - alpha*rate
     d1_channel = d1(delt_alph, alpha*snr/(1 + alpha*snr))
